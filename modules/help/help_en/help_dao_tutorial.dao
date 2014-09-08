@@ -5,20 +5,12 @@ dao.tutorial
 @[name]
 
 @[title]
-Dao Programming Tutorials
-@[title]
-
-@[name]
-dao.tutorial.basics
-@[name]
-
-@[title]
-Dao Programming Basics
+Quick Guide
 @[title]
 
 @[text]
 
-This tutorial will cover some basics of Dao programming.
+This quick guide will cover some basics of Dao programming.
 We will start with the traditional @[green]hello world@[green] example.
 
 
@@ -61,11 +53,11 @@ Invoking @[green]dao@[green] without any argument will start an interactive shel
 @[code]
 $$ dao
 
-  Dao Virtual Machine 1.2
-  Built date: Jun 20 2012
-  Changeset ID: FOS.a019d384dd7c
+  Dao Virtual Machine 2.0
+  Built date: Jun 12 2014
+  Changeset ID: FOS.4d5eb15f0e53
 
-  Copyright(C) 2006-2012, Fu Limin
+  Copyright(C) 2006-2014, Fu Limin
   Dao is released under the terms of the Simplified BSD License
   Dao Language website: http://www.daovm.net
 
@@ -93,14 +85,10 @@ the interactive command line, you can simple run,
 
 Such online helps come in two languages: English and Chinese.
 Currently the English version is more complete.
-To choose the language, one can define an environment variable:
+To choose the language,
 @[code]
-DAO_HELP_LANG = EN  # for English;
-DAO_HELP_LANG = ZH  # for Chinese;
-@[code]
-Or simply run Dao with,
-@[code]
-DAO_HELP_LANG=EN/ZH dao ...
+help::set_language("en");  # choose english;
+help::set_language("zh");  # choose chinese;
 @[code]
 
 
@@ -127,10 +115,11 @@ Here are multi-lines comments.
 
 
 @[subsection]
-Declaring Constant and Variables
+Constants, Variables and Invariables
 @[subsection]
 
-Dao supports the explicit declaration of constants, local variables and global variables.
+Dao supports the explicit declaration of constants, local variables,
+static variables, global variables and invariables.
 Constants are declared with keyword @[green]const@[green],
 @[code]
 const DEFAULT_INDEX = 123
@@ -138,33 +127,128 @@ const DEFAULT_NAME  = 'abc'
 @[code]
 Constants can only be initialized with constant expression.
 Constants that are declared at the top lexical scope are global constants.
-Global constants can also be declared inside nested lexical scopes by
-preceeding the @[green]const@[green] keyword with @[green]global@[green].
 
 
-Keyword @[green]global@[green] will declare global variables,
+Keyword @[green]var@[green] can be used to declare local and global variables.
+If used at the top lexical scope, it will declare global variables,
+otherwise the declared variables will be local.
 @[code]
-global current_index = 456
-global current_name  = 'def'
+var current_index = 456    # global variable;
+var current_name  = 'def'  # global variable;
+if( current_index ) {
+	var temp_index = current_index  # local variable;
+}
 @[code]
 
-By default, in Dao all variables are implicitly declared as local variables.
-When a variable need to be explicitly declared as local, to avoid messing with
-global variables or local variables in the upper lexical scopes,
-one can use keyword @[green]var@[green],
+In every places where @[green]var@[green] can be used, @[green]invar@[green]
+can be used as well, to declare local, global or member invariables.
+Invariables are special kind of variables that cannot be modified once initialized.
 @[code]
-var temp_index = 789
-var temp_name  = 'ghi'
+var   varlist = { 123 }
+invar invlist = varlist
+
+invlist.append( 456 )  # Error!
 @[code]
+Please see @[node]dao.data.invar@[node] for more information.
+
+
+Another type of variable is the static variable which can be declared with
+the @[green]static@[green] keyword. Outside class body, a static variable
+is a global variable with strictly local visibility within its declaration
+scope. So if a routine with static variables is executed multiple times,
+all the executions will access the same static variables.
+Static variables must be initialized with constant expressions.
+
+
+Without the above specifiers, newly declared symbols in the form of
+@[code]name=expression@[code] will be automatically declared as local variables. 
+But if the symbol was defined as variable, such statements will simply
+reinitialize the existing variable.
+To avoid this, one must the keyword @[green]var@[green] to explicitly
+declare the variable as local,
+@[code]
+var index = 789
+for( i = 1 : 3 ){
+	var index = 123  # Local to the loop;
+}
+@[code]
+
+Please read @[node]dao.data@[node] for more information.
 
 @[red]
-Note: in interactve mode, all variables are automatically declared as global variables.
+Note: in interactve mode, all top level variables are automatically declared
+as global variables.
 @[red]
+
+
+@[subsection]
+Type Annotation
+@[subsection]
+
+In the above examples, no type information is declared for the constants,
+variables and invariables.
+Their types are automatically inferred from the values that were used
+to initialize them.
+In many cases, it is better to provide type annotations to the constant,
+variable and invariable declarations. In general, programs with good
+type annotations are more readable them programs without them.
+
+
+Type annotations are usually placed after the constant/variable/invariable names
+with a colon sparating them.
+@[code]
+const vector: array<float> = [ 12.5, 34.6 ]
+
+var varlist: list<int>
+
+invar invlist: list<float> = { 12.5, 34.6 }
+@[code]
+Here without type annotation, "vector" will become a constant of type "array<double>".
+And "varlist" is declared without initializing expression, so its type cannot be
+inferred here.
+
+
+As you will see, type annotations can also be used in routine/function signatures
+and class member fields.
+Please read @[node]dao.type@[node] for more information.
+
+
+
+@[subsection]
+Control Structures
+@[subsection]
+
+
+
+@[subsection]
+Routines (Functions)
+@[subsection]
+
+
+
+@[subsection]
+Classes
+@[subsection]
+
+
+
+@[subsection]
+Error Handling
+@[subsection]
+
 
 @[text]
 
 
 
+
+@[name]
+dao.tutorial
+@[name]
+
+@[title]
+Tutorial
+@[title]
 
 ################################################################################
 ################################################################################
@@ -178,7 +262,7 @@ dao.tutorial.types
 @[name]
 
 @[title]
-Dao Essential Types
+Essential Types
 @[title]
 
 @[text]
@@ -186,30 +270,33 @@ Dao Essential Types
 Dao supports a number of essential types as built-in types to allow
 flexible use of them.
 These types include several number types, enum symbol, string, numeric array,
-list and map etc. 
+tuple, list and map etc. 
 
 
 @[subsection]
 Numbers
 @[subsection]
+
 Dao has native supports for the following number types:
 @[green]int@[green], @[green]float@[green], @[green]double@[green],
 @[green]complex@[green] and @[green]long@[green].
 
 
-@[green]int@[green] and @[green]float@[green] numbers can be expressed
-in the same ways as most other languages. But a @[green]double@[green] number,
-need a @[green]D@[green] suffix to @[green]int@[green] or @[green]float@[green] number
-to be parsed as a double precision floating point number.
+Integer and floating point numbers can be expressed
+in the same ways as in most other languages.
+Floating point numbers in Dao are parsed as double precision
+floating point numbers @[green]double@[green] by default.
+To explicitly express a single (double) precision floating point number 
+@[green]float@[green] (@[green]double@[green]),
+it is necessary to append a suffix @[green]F@[green] (@[green]D@[green])
+to a normally expressed number.
 
 
-For numbers written in scientific format,
-lower case @[green]e@[green] is used for @[green]float@[green];
-while upper case @[green]E@[green] is used for @[green]double@[green].
-
-
-A @[green]complex@[green] number can be expressed as an @[green]int@[green]
-or @[green]float@[green] number with a @[green]$@[green] suffix.
+The imaginary part of a @[green]complex@[green] number can be expressed as an 
+@[green]int@[green] or @[green]float@[green] number with a @[green]C@[green] suffix.
+A general @[green]complex@[green] number can be expressed by combining
+an integer or a floating point number as the real part and an imginary part,
+which are both stored as double precision floating point numbers.
 
 
 @[green]long@[green] type represents arbitrary precision integers. They
@@ -224,15 +311,17 @@ Examples,
 I1 = 123
 I2 = 0xabc
 
-F1 = 456.7
-F2 = 123e4
+F1 = 456.7F
+F2 = 123e4F
 
 D1 = 123D
+D2 = 456.7
 D2 = 456.7D
 D3 = 123E4
+D3 = 123E4D
 
-C1 = 123$
-C2 = 456.6$
+C1 = 123C
+C2 = 456.6C
 
 L1 = 123456789L
 L2 = 10001001110L2
@@ -295,7 +384,7 @@ e3 : enum<AA,BB,CC> = $BB
 @[code]
 
 Enum values can be used in switch-case statements, which can be optimized
-to table lookup, if the enums are explicitly typed or can be inferred.
+into table lookup, if the enums are explicitly typed or can be inferred.
 For example,
 @[code]
 switch( (any)e1 ){
@@ -312,7 +401,7 @@ case $CC : ...
 @[code]
 Both will be optimized into table lookup, because the case values have
 well defined types (the cases in the second example have types inferred from
-the expression in @[cyan]switch()@[cyan] ).
+the expression inside @[cyan]switch()@[cyan] ).
 
 
 
@@ -419,7 +508,7 @@ Such arrays can be defined by using the squared brackets
 Using such constructs, one can either enumerate all the elements
 as a vector/matrix, or specify an arithmetic progression with
 a start value, a step value and the number of steps.
-If the step value is omitted, it will be assumed to be one.
+If the step value is omitted, it will be assumed to be zero.
 
 @[code]
 vec1 = [1, 2, 3]  # array<int> vector, or 1x3 matrix;
@@ -494,19 +583,19 @@ alist[4] += 10
 Maps and Hash Maps
 @[subsection]
 
-A map or hash map organize a set of key/value pairs into a structure
+A map or hash map organizes a set of key/value pairs into a structure
 for efficient lookup. The keys in a map are ordered, while the keys
-in a hash map is unordered.
+in a hash map are unordered.
 A map can be created using @[green]{key=>value...}@[green] or
 @[green]map{key=>value...}@[green]. Replacing the @[green]=>@[green]
-with colon @[green]:@[green] will create hash maps.
+with colon @[green]->@[green] will create hash maps.
 Map and hash map can be used in identical ways.
 @[code]
-amap = { 'abc' => 123, 'def' => 456 }
-ahash = { 'abc' ~> 123, 'def' ~> 456 }
+amap  = { 'abc' => 123, 'def' => 456 }
+ahash = { 'abc' -> 123, 'def' -> 456 }
 
-amap = map{ 'abc' => 123, 'def' => 456 }
-ahash = map{ 'abc' ~> 123, 'def' ~> 456 }
+amap  = map{ 'abc' => 123, 'def' => 456 }
+ahash = map{ 'abc' -> 123, 'def' -> 456 }
 @[code]
 
 Sub-scripting and slicing are also supported for map to access value(s)
@@ -572,7 +661,7 @@ dao.tutorial.controls
 @[name]
 
 @[title]
-Dao Constrol Structures
+Constrol Structures
 @[title]
 
 @[text]
@@ -581,7 +670,7 @@ Control structures are essential for a program to do complex work.
 Dao supports the common controls such as:
 @[green]if-else@[green], @[green]for@[green], @[green]while@[green],
 @[green]do-while@[green], @[green]switch-case@[green], 
-@[green]break@[green] and @[green]skip@[green] (continue) etc.
+@[green]break@[green] and @[green]skip@[green] etc.
 
 
 @[subsection]
@@ -611,6 +700,12 @@ and zero or one @[green]else@[green] statement can be used.
 
 @[code]
 if( 2 > 1 ) io.writeln("2 is larger than 1.");
+@[code]
+
+Before each condition expression, there can be an optional expression
+or variable declaration, for example,
+@[code]
+if( rnd = rand(100); rnd > 50 ) io.writeln( "random number is >50" );
 @[code]
 
 
@@ -661,8 +756,7 @@ for( item in list ){
 @[code]
 Multiple @[cyan]in@[cyan] can appear in one loop, and the items of the same
 indices from multiple lists are taken in each cycle. The loop is terminated
-after all the items in the first list have been iterated. So the other lists
-must be at least as long as the first, otherwise an exception will be arose.
+after all the items in the shortest list have been iterated.
 @[code]
 for( item1 in list1; item2 in list2; ... ){
    block;
@@ -680,22 +774,21 @@ for( item in a_map ){
 
 Examples,
 @[code(dao)]
-for( i:=0; i<3; ++i ){
+for( i=0; i<3; ++i ){
    io.writeln( i );
 }
 
 hash = { "b" => 11, "a" => 22, "e" => 33, "c" => 44 };
-for( a in hash.key(); b in hash.value(); c in {1 : 1 : hash.size()-1 } ){
+for( a in hash.keys(); b in hash.values(); c in {1 : 1 : hash.size()-1 } ){
    #if a == "a" break
    io.writeln( a, b, c );
 }
 @[code(dao)]
-This example raises an exception, because the last list @[cyan]c@[cyan] contains
-one less element.
 
 
-Note: if a single string is used in the condition expression in @[green]if,while,for@[green] statements,
-it returns true, if the string has length larger than zero, otherwise, returns false.
+Note: if a single string is used in the condition expression 
+in @[green]if,while,for@[green] statements, it returns true, 
+if the string has length larger than zero, otherwise, returns false.
 
 
 
@@ -712,7 +805,8 @@ while( expr ){
 }
 @[code]
 
-If @[cyan]expr@[cyan] is true, @[cyan]block@[cyan] is executed and repeated until @[cyan]expr@[cyan] becomes false,
+If @[cyan]expr@[cyan] is true, @[cyan]block@[cyan] is executed and repeated 
+until @[cyan]expr@[cyan] becomes false,
 namely, while @[cyan]expr@[cyan] is true, execute @[cyan]block@[cyan].
 
 @[code]
@@ -722,6 +816,13 @@ while( i < 5 ){
    i += 1;
 }
 @[code]
+
+Before the condition expression, there can be an optional expression
+or variable declaration, for example,
+@[code]
+while( rnd = rand(100); rnd > 50 ) io.writeln( "random number is >50" );
+@[code]
+
 
 
 
@@ -915,7 +1016,7 @@ dao.tutorial.routine
 @[name]
 
 @[title]
-Dao Routine (Function)
+Routine and Decorator
 @[title]
 
 @[text]
@@ -923,7 +1024,7 @@ Dao Routine (Function)
 Routine is a relative independent block of codes that can be reused
 by invoking it at places where it is needed. 
 It can accept parameters to changes its behaviour.
-It may also return results to its callee.
+It may also return results to its caller.
 
 
 
@@ -1011,10 +1112,10 @@ foo = routine( x, y : TYPE, z = DEFAULT )
 The syntax is nearly identical to the definition of a normal function,
 except the following differences:
 @[list]
-==there is no need for a function name, but the created function must be assigned to a variable;
-==the default value expressions for parameters do not necessary to be constant expressions,
+== There is no need for a function name;
+== The expressions for default parameters do not need to be constant expressions,
 they are evaluated at running time when the function/closure is created;
-==the function body may contain variables defined in the "upper" function that creates it;
+== The function body may contain variables defined in the "upper" function that creates it;
 depending on the type of the "upper" variable, its copy (for simple types) 
 or reference will be used by the created function.
 @[list]
@@ -1043,87 +1144,8 @@ rout( 1, "XXX" );
 Coroutine and Generator
 @[subsection]
 
-Coroutines and generator (a special form of coroutine) are special routines 
-that can suspend and yield their execution to other routines or coroutines, 
-and be resumed by them when needed.
+See @[node]module.core.coroutine@[node].
 
-
-Definition of a coroutine is very similar to define a normal routine,
-with two minor differences:
-@[list]
-==Its return type must be placed in between a pair of squared brackets;
-==It can contain @[green]yield@[green] statement(s) in the routine body.
-@[list]
-@[green]yield@[green] statement(s) can be used to suspend the current coroutine,
-and the parameters passed to the @[green]yield@[green] statement(s) are passed out
-to the routine that has invoked or resumed this coroutine.
-After suspension, the coroutine can be resumed in the same way as function calls,
-and the parameters to such calls are passed into the coroutine, and become
-the returned values of the @[green]yield@[green] statement(s).
-
-
-When a @[green]return@[green] statment is executed or the end of the function is reached, 
-the coroutine will exit and become not resumable anymore.
-
-
-The creation of a coroutine or generator is similar to a function call,
-but with @[green]::@[green] place before the brackets:
-@[code]
-corout = ACoroutine::( parameters )
-@[code]
-
-
-An example generator:
-@[code]
-# int => tuple<int,int>
-routine gen1( a = 0 ) => [?] # use ? for automatic inferring;
-{
-    k = 0;
-    while( ++k < 3 ) a = yield( k, a );
-    return 0,0;
-}
-routine gen2( a = 0 ) => [?] 
-{
-    return gen1( a );
-}
-g = gen2::( 1 );
-# parameters can be omitted the first time it's called;
-# the first call may use the parameters 
-# that are used for creating the generator:
-io.writeln( 'main1: ', g() );
-io.writeln( 'main2: ', g( 100 ) );
-io.writeln( 'main3: ', g( 200 ) );
-
-io.writeln( std.about(gen1) )
-@[code]
-
-
-An example coroutine:
-@[code]
-routine foo( a = 0, b = '' )=>[?]
-{
-    io.writeln( 'foo:', a );
-    return yield( 2 * a, 'by foo()' );
-}
-
-routine bar( a = 0, b = '' )=>[?]
-{
-    io.writeln( 'bar:', a, b );
-    ( r, s ) = foo( a + 1, b );
-    io.writeln( 'bar:', r, s );
-    ( r, s ) = yield( a + 100, b );
-    io.writeln( 'bar:', r, s );
-    return a, 'ended';
-}
-
-co = bar::( 1, "a" );
-   
-io.writeln( 'main: ', co() );
-io.writeln( 'main: ', co( 1, 'x' ) );
-io.writeln( 'main: ', co( 2, 'y' ) );
-# coroutine has been finished, the following will rise an exception.
-io.writeln( 'main: ', co( 3, 'z' ) );
-@[code]
 
 
 
@@ -1150,7 +1172,7 @@ routine meth_name( meth_params ) [sect_params => sect_return] => meth_return
 	...
 }
 @[code]
-The parameter list prototype @[cyan]sect_params@[cyan] for the code section specifies
+The parameter list signature @[cyan]sect_params@[cyan] for the code section specifies
 what kind of parameters this method will pass to the code section; and the section
 return type @[cyan]sect_return@[cyan] indicates what type of value this method expects
 the code section to return.
@@ -1158,13 +1180,13 @@ the code section to return.
 
 Code section method can be called in the following way:
 @[code]
-returned = meth_name( meth_params )::{
+returned = meth_name( meth_params ) {
 	code_block
 }
 @[code]
 If there is no method parameter, it can be simply written as:
 @[code]
-returned = meth_name::{
+returned = meth_name {
 	code_block
 }
 @[code]
@@ -1172,14 +1194,14 @@ By default, the code section receives the parameters passed in by the method
 through implicitly defined variables named @[green]X@[green] and @[green]Y@[green].
 User can choose to use more meaningful names by,
 @[code]
-returned = meth_name::{ [index, item]
+returned = meth_name { [index, item]
 	code_block
 }
 @[code]
 
 
 For example, list type has a code section method for sorting with 
-the following prototype,
+the following signature,
 @[code]
 sort( self :list<@T>, k=0 ) [X :@T, Y :@T => int] => list<@T>
 @[code]
@@ -1192,14 +1214,14 @@ So this @[green]sort()@[green] can be use in the following ways,
 numlist = { 11, 44, 21, 32, 56, 67, 25 }
 
 # Sort all by ascend order:
-numlist.sort::{ X < Y }
+numlist.sort { X < Y }
 
 # Sort by descend order until the largest 3 items are sorted:
-numlist.sort( 3 )::{ X > Y }
+numlist.sort( 3 ) { X > Y }
 # Now the first 3 items of the list is the largest 3 items;
 
 tuplist = { ( 2, 'ghi' ), ( 1, 'def' ), ( 2, 'abc' ), ( 1, 'abc' ) }
-tuplist.sort::{
+tuplist.sort {
 	# First sort by the first items of the tuples;
 	if( X[0] != Y[0] ) return X[0] < Y[0];
 	# Then sort by the second items;
@@ -1224,12 +1246,99 @@ routine Test() [X :int => string] => string
 	return s;
 }
 
-Test::{
+Test {
 	io.writeln( 'In code section:', X );
 	return 'abc';
 }
 @[code]
 
+
+
+
+@[subsection]
+Decorator
+@[subsection]
+
+@[red]
+Note: this feature is only functional in the online demos
+and the latest devel release.
+@[red]
+
+
+
+Decorators are a special type of functions that can be used to
+modify (decorate) other functions or create modified versions of these functions.
+There are two main ways to decorate a function: one is to specify one or more
+decorators for a function at its definition; the other is to call a decorator
+in an expression in the same way to call a function.
+Decorating a function at its definition will change that function,
+and decorating a function in an expression will create a modified copy of the function.
+
+
+A decorator can be defined in almost identical way as definition a normal function
+with a few exceptions.
+First, a decorator must be declared with a name prefixed with @[green]@@[green],
+and second, the first parameter must be a routine type,
+which determines which type of routines can be decorated by this decorator.
+A variable to hold the parameters that will be passed to the function,
+must also be declared inside a pair of brackets right after the name of the first parameter.
+
+
+For example,
+@[code]
+routine @Decorator( func(args) : routine, extra = 123 )
+{
+	io.writeln( 'Calling function:', std.about( func ), extra );
+	return func( args, ... ); # ... for parameter expanding;
+}
+@[code]
+This decorator can be applied to any function.
+In this decorator, the decorated function is called with
+@[green]args@[green], which is expanded for the call
+as indicated by @[green]...@[green].
+@[green]args@[green] is a specially declared variable
+to hold the parameters that will be passed to the function.
+
+
+In the following example, the function is decorated and modified at its definition,
+@[code]
+# brackets can be omitted when the decorator take no parameter:
+@Decorator
+@Decorator( 456 )
+routine Function()
+{
+	io.writeln( 'Function()' )
+}
+@[code]
+
+While in this one, a modified copy of the function will be returned,
+@[code]
+routine Function()
+{
+	io.writeln( 'Function()' )
+}
+func = @Decorator( Function )
+@[code]
+
+If a decorator expression uses only constants, the decoration can be done
+at compiling time,
+@[code]
+const MyFunc = @Decorator( Function )
+@[code]
+
+This feature can be exploited to create modified copies of existing functions
+that are imported or loaded from other modules, and use the same function names,
+@[code]
+load MyModule  # MyFunction is defined in this module;
+
+# Create a modified copy and use the same name:
+const MyFunction = @Decorator( MyFunction )
+@[code]
+
+
+Decorators can be overloaded just like normal functions,
+and be applied to overloaded functions, as well as class methods.
+Please see @[node]dao.routine.decorator@[node] for additional information.
 
 @[text]
 
@@ -1249,7 +1358,7 @@ dao.tutorial.class
 @[name]
 
 @[title]
-Dao Class and Object-Oriented Programming
+Class, Mixin, OOP and AOP
 @[title]
 
 @[text]
@@ -1263,12 +1372,13 @@ is further enhanced by interface.
 @[subsection]Class Definition@[subsection]
 
 A @[green]class@[green] is a user-defined data structure consisting data fields and
-member methods, which define the states and behaviours the instances of the class.
+member methods, which define the states and behaviours for the instances of the class.
 Class supports three types of fields:
 @[list]
 --@[green]constant@[green]: declared with keyword @[green]const@[green];
 --@[green]static variable@[green]: declared with keyword @[green]static@[green];
 --@[green]instance variable@[green]: declared with keyword @[green]var@[green];
+--@[green]instance invariable@[green]: declared with keyword @[green]invar@[green];
 @[list]
 Such fields can be declared with or without explicit types,
 and with or without default or initialization values,
@@ -1315,9 +1425,6 @@ in the same way as in C++, but in Dao, one should make sure that, the parameter 
 must be exactly the same in the places for declaration and definition.
 
 
-Like in C++, virtual method can be declared by adding keyword @[green]virtual@[green]
-before the @[green]routine@[green] or @[green]function@[green] keyword.
-
 
 
 @[subsection]Class Instance@[subsection]
@@ -1342,14 +1449,14 @@ class Point3D
 	var y = 0D;
 	var z = 0D;
 }
-point = Point3D{ 1, 2, 3 };
+point = Point3D.{ 1, 2, 3 };
 @[code]
 The names of instance variables may also be specified in enumeration,
 @[code]
-point = Point3D{
-	y => 2,
-	x => 1,
-	z => 3,
+point = Point3D.{
+	y = 2,
+	x = 1,
+	z = 3,
 };
 @[code]
 
@@ -1530,14 +1637,217 @@ magenta = ColorRGBA( $magenta )
 
 In the definition of derived class,
 the parent class @[cyan]ColorRBG@[cyan] should be put after the derived class 
-and be separated with @[green]:@[green]. If there are more than
-one parent classes, separate them with @[green],@[green]. The parameters for derived class
+and be separated with @[green]:@[green]. 
+<red>(Since 2013-10-20, classic multiple inheritance is no longer support.
+Now mixins are the preferred way to do similar things.)</red>
+The constructor parameters for derived class
 can be passed to parent classes in the way as shown in the example.
 
 
-Constructors from parent classes can be inherited by using the @[green]use@[green]
+Constructors from the parent class can be inherited by using the @[green]use@[green]
 statement, in which the full function signature of the constructor should be specified.
 
+
+
+@[subsection]
+Mixin
+@[subsection]
+
+@[red]
+Features introduced in the this and the remaining sections
+are available only in the latest devel release and the online version.
+@[red]
+
+
+Classes to be used as mixins can be specified in a pair of brackets
+following the class name. Only classes without parent classes can
+be used as mixins.
+
+@[code]
+class Base
+{
+	var value = 456
+	routine Meth2(){ io.writeln( self, value ) }
+}
+
+class Mixin ( Base )
+{
+	var index = 123
+
+	routine Meth(){ io.writeln( self, index, value ) }
+	routine Meth2( a : string ){ io.writeln( self, index, value, a ) }
+}
+
+#
+# The "Base" class will be presented only once in "Klass":
+#
+class Klass ( Base, Mixin )
+{
+	var index = 123456
+	routine Meth2( a : int ){ io.writeln( self, index, value, a ) }
+}
+
+k = Klass()
+
+io.writeln( k.index )
+
+k.Meth()
+k.Meth2()
+k.Meth2( 'abc' )
+k.Meth2( 789 )
+@[code]
+
+
+
+@[subsection]
+Class Decorator
+@[subsection]
+
+(New in the latest devel release and online version)
+
+Class decorators are classes that can be used modify other classes.
+The modification is done by using such class as a mixin base class
+to inject (combine) its members into the modified class, and by
+automatically applying its method decorators to the methods of the
+modified class.
+
+For such auto decorator application, only decorators with explicitly
+specified decoration targets are automatically applied. Such targets
+are expressed as prefix and suffix rules which can be expressed in
+the following ways:
+@[list]
+== Prefix~ : a prefix pattern.
+   The decorator will be auto applied to methods that have names
+   with such prefix;
+== ~Suffix : a suffix pattern.
+   The decorator will be auto applied to methods that have names
+   with such suffix;
+== Prefix~Suffix : a prefix and suffix pattern.
+   The decorator will be auto applied to methods that have names
+   with such prefix and suffix;
+== ~ : an empty prefix and suffix pattern.
+   The decorator will be auto applied to any methods.
+@[list]
+
+
+When multiple mixins are used in a host class, the decorators of the
+first mixin are applied the last. And the first decorator of the same
+decorator is also applied the last as well.
+
+@[code]
+class @Header
+{
+	static routine @Delimiter( meth(args) : routine ) for ~ {
+		io.writeln( '=======================' )
+		return meth( args, ... )
+	}
+	routine @Delimiter( meth(args) : routine ) for ~ {
+		io.writeln( '-----------------------' )
+		return meth( args, ... )
+	}
+}
+class @Decorator
+{
+	var value = 654321
+
+	routine @Test( meth(args) :routine<self:@Decorator> ) for Test {
+		io.writeln( 'Decorator::Test()', value )
+		meth( args, ... );
+	}
+	routine @Prefix( meth(args) :routine<self:@Decorator> ) for Prefix~ {
+		io.writeln( 'Decorator::Prefix()' )
+		meth( args, ... );
+	}
+	routine @Suffix( meth(args) :routine<self:@Decorator> ) for ~Suffix {
+		io.writeln( 'Decorator::Suffix()' )
+		meth( args, ... );
+	}
+	routine @Prefix_Suffix( meth(args) :routine<self:@Decorator> ) for Prefix~Suffix {
+		io.writeln( 'Decorator::Prefix_Suffix()' )
+		meth( args, ... );
+	} 
+}
+
+class MyMixin ( @Header, @Decorator )
+{
+	routine Test(){
+		io.writeln( 'MyMixin::Test()' )
+	}
+	routine PrefixTest(){
+		io.writeln( 'MyMixin::PrefixTest()' )
+	}
+	routine TestSuffix(){
+		io.writeln( 'MyMixin::TestSuffix()' )
+	}
+	routine PrefixTestSuffix(){
+		io.writeln( 'MyMixin::PrefixTestSuffix()' )
+	}
+}
+
+obj = MyMixin()
+obj.Test()
+obj.PrefixTest()
+obj.TestSuffix()
+obj.PrefixTestSuffix()
+@[code]
+
+
+
+@[subsection]
+Aspect Class
+@[subsection]
+
+(New in the latest devel release and online version)
+
+
+In Dao, a class decorator can be effectly used as an aspect for AOP,
+if decoration target patterns are specified for auto application.
+The target patterns are can be specified in the same way as the
+target patterns for class method decorators.
+
+
+The fields of such class will be automatically injected to
+normal classes selected according to the affix rules, and
+the decorators defined in such aspect class are automatically
+applied to the methods (selected according to the same affix
+rules) of the normal classes.
+
+@[code]
+class @AspectForAnyClass for ~  # To be applied to any classes;
+{
+	var injected : list<int> = {}
+
+	# This is not a decorator!
+	routine @AspectForAnyClass(){
+		io.writeln( 'In @AspectForAnyClass():' );
+		injected = { 1, 2, 3 }
+	}
+
+	# This decorator will also be applied to the default constructors:
+	routine @DecoratorForAnyMethod( meth(args) : routine ) for ~ {
+		io.writeln( 'In @DecoratorForAnyMethod():', std.about(meth) )
+		io.writeln( injected )
+		return meth( args, ... )
+	}
+}
+
+# For classes with names prefixed with My:
+class @AspectForMyClasses for My~
+{
+	routine @Method( meth(args) : routine ) for Method~ {
+		io.writeln( 'In @AspectForMyClasses::@Method():', std.about(meth) )
+		return meth( args, ... )
+	}
+}
+
+class MyClass
+{
+	routine Method(){ io.writeln( 'MyClass::Method()' ) }
+}
+
+k = MyClass()  # Invoke the default constructor of Klass;
+k.Method()
+@[code]
 
 
 @[text]
@@ -1569,7 +1879,7 @@ Abstract Interface
 
 @[text]
 Abstract interface is a type that describes how an object can be used,
-by specifying what methods and overloaded operators can be applied to the object.
+by specifying what methods and overloaded operators should be supported the object.
 An object is compatible (matching) to an interface type,
 if only if the object supports all the methods and operators that are specified by the interface.
 Interface is an abstract type, since no instance can be created from an interface,
@@ -1782,8 +2092,8 @@ the caller of the function that handles the exceptions in its deferred blocks.
 In order to resume the normal execution right after handling of exceptions,
 a special type of code blocks can be used to "host" the deferred blocks,
 @[code(dao)]
-@@ { block }
-@@ ( value ) { block }
+frame { block }
+frame ( value ) { block }
 @[code(dao)]
 These kinds of blocks are executed in new stack frames,
 and when these blocks are finished and the frames are removed from the stack,
@@ -1791,11 +2101,11 @@ deferred blocks encounted in these blocks will be automatically executed
 in the same way as the deferred blocks defined in normal functions.
 If the exceptions are recovered in these deferred blocks,
 the normal execution will be resumed right after these 
-@[green]@@{}@[green] blocks,
+@[green]frame{}@[green] blocks,
 @[code(dao)]
 fout = io::stdio
 
-@@ {
+frame {
 	defer { recover() }
 	fout = io.open( "NonExistentFile.txt", 'r+' )
 }
@@ -1805,15 +2115,15 @@ if( fout != io::stdio ) defer{ fout.close() }
 fout.writeln( 'hello' )
 @[code(dao)]
 
-Such @[green]@@{}@[green] blocks are actually expressions that may return values.
-The only difference between @[green]@@{block}@[green] and 
-@[green]@@(value){block}@[green] is that,
+Such @[green]frame{}@[green] blocks are actually expressions that may return values.
+The only difference between @[green]frame{block}@[green] and 
+@[green]frame(value){block}@[green] is that,
 in the second case, if the @[cyan]block@[cyan] raises an exception,
 the default @[cyan]value@[cyan] is returned instead, 
 and the exception is suppressed.
 This can make codes such as shown in the above example simpler,
 @[code(dao)]
-fout = @@( io::stdio ){ io.open( "NonExistentFile.txt", 'r+' ) }
+fout = frame( io::stdio ){ io.open( "NonExistentFile.txt", 'r+' ) }
 if( fout != io::stdio ) defer{ fout.close() }
 fout.writeln( 'hello' )
 @[code(dao)]
@@ -1847,10 +2157,10 @@ Concurrent Programming
 
 Dao has several features that support concurrent programming.
 The first is a concurrent Garbage Collector (GC), which works behind
-the scene. The other features come in two main forms:
-multi-threading module and asynchronous class, which are built 
-around a lightweight thread pool with a simple scheduler
-to map thread tasks to native threads.
+the scene. The other features come in the following forms:
+multi-threading module, asynchronous function call and asynchronous object,
+which are built around a lightweight thread pool with a simple scheduler
+to map thread tasks (or tasklets) to native threads.
 
 
 @[subsection]
@@ -1860,31 +2170,32 @@ Multi-threading Module
 The Multi-threading Module (@[green]mt@[green]) offers the traditional
 multi-threading based on threads with mutexes, condition variables and semaphores.
 The main functionalities of @[green]mt@[green] are provided as code section methods
-for maximum flexibility and expressiveness. For example, a thread task can
+for maximum flexibility and expressiveness. For example, a tasklet can
 be started with the @[green]mt.start()@[green] method,
 @[code]
-fut1 = mt.start::{
+fut1 = mt.start {
 	sum = 0;
 	for( i = 1 : 10000 ) sum += i * i
 	return sum
 }
-fut2 = mt.start( $now )::{
+fut2 = mt.start( $now ) {
 	sum = 0;
 	for( i = 1 : 10000 ) sum += i * i
 	return sum
 }
 io.writeln( fut1.value(), fut2.value() )
 @[code]
-@[green]mt.start()@[green] can execute any expression or block of codes as a thread task,
+@[green]mt.start()@[green] can execute any expression or block of codes as a tasklet,
 which may be scheduled to run when a native thread become available to it.
-If the thread task needs to be started immediately, the additional parameter @[cyan]$now@[cyan]
+If the tasklet needs to be started immediately, the additional parameter @[cyan]$now@[cyan]
 can be passed to @[green]mt.start()@[green], so that a new native thread may be created
 if there is no other native thread available for the task.
 
 
 @[green]mt.start()@[green] returns a future value which will be used to store the value
-returned by the thread task. Accessing its value by @[green]future.value()@[green]
-will cause the current thread to block until the value becomes available after the task finishs.
+returned by the tasklet.
+Accessing its value by @[green]future.value()@[green] will cause the current
+tasklet to block until the value becomes available after the tasklet finishs.
 If one wants to wait for the task for only a limited amount of time, the method
 @[green]future.value()@[green] can be used with a timeout parameter (a float value
 for seconds or fraction seconds, negative for infinite waiting).
@@ -1918,48 +2229,77 @@ parallelized code section methods of @[green]mt@[green],
    tested by the code block.
 @[list]
 
+
+The default number of threads used by these methods are 2.
 Examples,
 @[code]
 ls = {1,2,3,4,5,6}
 
-mt.iterate( 10 )::{ io.writeln( X ) }
-mt.iterate( ls, 2 )::{ io.writeln( X ) }
+# Use 2 threads to iterate 10 times:
+mt.iterate( 10 ) { io.writeln( X ) }
 
-mt.map( ls, 2 )::{ X*X } # produces new list: {1,4,9,16,25,36}
-mt.apply( ls, 2 )::{ X*X } # ls becomes: {1,4,9,16,25,36}
+# Use 3 threads to iterate over a list:
+mt.iterate( ls, 3 ) { io.writeln( X ) }
+
+mt.map( ls, 2 ) { X*X } # produces new list: {1,4,9,16,25,36}
+mt.apply( ls, 2 ) { X*X } # ls becomes: {1,4,9,16,25,36}
 @[code]
 
 
+
 @[subsection]
-Asynchronous Class
+Asynchronous Function Call
 @[subsection]
 
-Asynchronous class is a class whose instance methods will be executed asynchronously, 
-namely, calling a method on an instance object of such class will return a future value 
-immediately, and the execution will be started in different thread. 
-Such executions are scheduled such that only one method is actively executed 
-for any single object at any time, namely, multiple executions on the same object 
-are mutually exclusive.
+Asynchronous Function Call (AFC) allows a function call to be executed
+as a tasklet, and return immediately a future value that can be use to block on
+the tasklet and wait for its completion.
 
 
-So each instance of an asynchronous class act just like a monitor,
-but it also acts like an actor in the actor model considering that calling methods
-of such instance is just like sending messages to the instance with function parameters
-being the message contents. For each instance, these messages are processed one by one
+Any standard function call followed by @[green]!!@[green] will start an AFC.
+@[code]
+routine MyFunction( n = 10 )
+{
+	for( i = 1 : n ) io.writeln( i )
+}
+f = MyFunction( 20 ) !!
+io.writeln( f.value() )
+@[code]
+
+
+When multiple methods of a class instance are called in asynchronous mode,
+their execution will be mutually exclusive, namely, at any given time only
+call (tasklet) can be active. So in this way, the class instance acts
+just like a @[link]monitor@@http://en.wikipedia.org/wiki/Monitor_(synchronization)@[link].
+
+
+
+@[subsection]
+Asynchronous Object
+@[subsection]
+
+
+An asynchronous object is a class instance that is created with asynchronous call mode,
+@[code]
+async_objet = some_class( ... ) !!
+@[code]
+
+When an asynchronous object invokes a method, it will be automatically called in
+asynchronous mode, and start a tasklet and return a future value.
+Such tasklets are queued and and executed in the order they are queued.
+
+
+So such asynchronous object acts like an actor in the 
+@[link]actor model@@http://en.wikipedia.org/wiki/Actor_model@[link]
+considering that calling methods of such object is just like sending messages
+to the object with function parameters being the message contents.
+For each instance, these messages are processed one by one
 in the order of receiving.
 
 
-Defining an asynchronous class is very much like defining a normal class,
-but with the following restrictions:
-@[list]
---It cannot contain public data field;
---It cannot derive from normal class (and vice versa);
-@[list]
-Preceeding the class name with @[green]@@[green] defines an asynchronous class.
-In other places, the class name should be used without the @[green]@@[green] prefix.
 Here is an simple example,
 @[code]
-class @Account
+class Account
 {
 	private
 
@@ -1987,8 +2327,8 @@ class @Account
 	}
 }
 
-acount1 = Account( 100 )
-acount2 = Account( 100 )
+acount1 = Account( 100 ) !!
+acount2 = Account( 100 ) !!
 
 future1 = acount1.Withdraw( 10 )
 if( future1.value() == $true ) future2 = acount2.Deposit( 10 )
@@ -2000,8 +2340,81 @@ io.writeln( 'Balance in account2:', acount2.Balance().value() )
 @[code]
 
 Like calling @[green]mt.start()@[green], calling a method on an asynchronous
-class instance will return a future value, which can be used to check the
+object will return a future value, which can be used to check the
 status of the asynchronous call.
+
+
+
+@[subsection]
+Communication Channels
+@[subsection]
+
+Tasklets (represented by future values) created from @[green]mt::start@[green],
+asynchronous function call and the methods of asynchronous object 
+can be assigned to native threads to run concurrently.
+Tasklets can communicate and synchronize with each other using 
+@[green]communication channels@[green].
+
+
+The @[green]channel@[green] type is implemented as a customized C data type
+that supports template-like type arguments. So to construct a channel that 
+can send and receive integers, one can use,
+@[code]
+chan = mt::channel<int>()
+@[code]
+Here @[magenta]channel@[magenta] is prefixed with @[magenta]mt::@[magenta],
+because @[green]channel@[green] is defined in the built-in @[green]mt@[green]
+multi-threading module.
+
+
+The type argument @[magenta]int@[magenta] indicates this channel can only
+be used to transmit integers. Currently, only primitive types 
+(@[green]int@[green], @[green]float@[green], @[green]double@[green], 
+@[green]complex@[green], @[green]string@[green], @[green]enum@[green]) 
+plus @[green]array@[green] types, and their composition through 
+@[green]list@[green], @[green]map@[green] and @[green]tuple@[green] 
+types are supported for channels. 
+
+
+Each channel has a capacity for transmitting data, which are buffered in the channel. 
+When the channel's buffer reached its capacity, any attempt to send data to it 
+will result in the blocking of the sender, which will be resumed either after 
+a timeout or after some data of the channel have been read out of the buffer 
+to make room for the new data being sent by the blocked sender. 
+Channel capacity can be passed to the constructor of the channel as 
+an optional parameter, which is one by default.
+
+
+The essential methods of channel are:
+@[list]
+--send(): for sending data to the channel;
+--receive(): for receiving data from the channel;
+--select(): for selecting a group of channels;
+@[list]
+See @[node]dao.concurrent.channel@[node] for details.
+Here is a simple example,
+@[code]
+chan = mt::channel<int>(2)
+
+produce = mt.start {
+	index = 0;
+	while( ++index <= 10 ){
+		io.writeln( 'sending', index )
+		chan.send( index )
+	}
+	chan.cap(0)  # set channel buffer size to zero to close the channel;
+}
+
+consume = mt.start {
+	while(1){
+		data = chan.receive()
+		io.writeln( "received", data );
+		if( data.status == $finished ) break
+	}
+}
+@[code]
+
+
 
 @[text]
 
@@ -2027,7 +2440,7 @@ dao.tutorial.tips
 @[name]
 
 @[title]
-Dao Programming Tips
+Programming Tips
 @[title]
 
 @[text]

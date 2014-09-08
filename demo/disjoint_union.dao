@@ -6,7 +6,7 @@
 intstring : list<int|string> = {};
 
 intstring.append( 123 );
-intstring.append( 'abc' );
+intstring.append( "abc" );
 
 #intstring.append( {} ); # typing error
 
@@ -31,7 +31,7 @@ class BB
 	routine Size()=>int{ return 20 }
 }
 
-routine Test( object : AA | BB | HasSizeMethod )
+routine Test( object: AA | BB | HasSizeMethod )
 {
 # casting to an interface will invoke automatic binding:
 	object2 = (HasSizeMethod) object;
@@ -43,21 +43,20 @@ io.writeln( std.about( Test ) );
 Test( AA() )
 Test( BB() )
 
-routine Test2( data : int | float | double | string )
+routine Test2( data: int|float|double|string )
 {
-# get 1-based index of its type in the disjoint union type:
-	switch( data ?< type(int|float|double|string) ){
-	case 1 : io.writeln( 'handling int' );
-	case 2 : io.writeln( 'handling float' );
-	case 3 : io.writeln( 'handling double' );
-	case 4 : io.writeln( 'handling string' );
+	switch( data ) type {
+	case int    : io.writeln( "handling int", std.about( data ) );
+	case float  : io.writeln( "handling float", std.about( data ) );
+	case double : io.writeln( "handling double", std.about( data ) );
+	case string : io.writeln( "handling string", std.about( data ) );
 	}
 }
 
 Test2( 1 );
-Test2( 1.0 );
+Test2( 1.0F );
 Test2( 1.0D );
-Test2( 'abc' );
+Test2( "abc" );
 
 
 
@@ -72,13 +71,14 @@ class FakeImage
 # instead of writing operator methods with all the combinations
 # such as tuple<int,int>, tuple<int,none>, ...
 # one can use disjoint union to simplify this.
-	operator[]( i : int, js : tuple<int|none,int|none> )=>array<int>
+	operator[]( i: int, js: none|tuple<int|none,int|none> )=>array<int>
 	{
 # one can simply return image[i,js], but the following is for demonstration purpose:
 		j1 = 0;
 		j2 = image.dim(1) - 1;
-		if( js[0] != none ) j1 = (int) js[0];
-		if( js[1] != none ) j2 = (int) js[1];
+		if( js == none ) return image[i,:];
+		if( js[0] != none ) j1 = js[0];
+		if( js[1] != none ) j2 = js[1];
 		return image[i,j1:j2];
 	}
 }
@@ -100,9 +100,9 @@ routine Sum( alist : list<@T<int|string>> ) => @T
 }
 
 s = Sum( { 1, 2, 3 } );
-#s += 'a'; # typing error
+#s += "a"; # typing error
 io.writeln( s );
 
-s2 = Sum( { 'a', 'b', 'c' } );
+s2 = Sum( { "a", "b", "c" } );
 io.writeln( s2 );
 

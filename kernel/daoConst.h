@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,15 +14,16 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #ifndef DAO_CONST_H
@@ -33,72 +34,96 @@
 
 #define DAO_MAX_SECTDEPTH  8
 
+#define DAO_KERNEL
 
 #include"dao.h"
 #include"daoBase.h"
 
-enum DaoRTTI
+enum DaoExtraTypes
 {
 	DAO_VARIANT = END_CORE_TYPES, /* variant or disjoint union type */
-	DAO_FUTURE ,  /* future value type */
-	DAO_MACRO ,
 	DAO_CONSTANT ,
 	DAO_VARIABLE ,
 	DAO_ROUTBODY ,
 	DAO_TYPEKERNEL ,
 	DAO_CODEBLOCK ,
 
-	DAO_PAIR ,
 	DAO_PAR_NAMED ,   /* name:type */
 	DAO_PAR_DEFAULT , /* name=type */
-	DAO_PAR_VALIST , /* ... */
-
-	DAO_VALTYPE , /* value type type */
+	DAO_PAR_VALIST ,  /* ... */
 
 	/* bit (1<<6) to indicate inexact checking: */
 	DAO_ANY = (1<<6)|0, /* any type */
 	DAO_THT = (1<<6)|1, /* type holder type */
 	DAO_UDT = (1<<6)|2, /* undefined type */
 
-	END_EXTRA_TYPES ,
-
-	END_NOT_TYPES
+	END_EXTRA_TYPES 
 };
 
-enum DaoBasicStruct
+enum DaoSubTypes
 {
-	D_NULL ,
-	D_VALUE ,   /* garbage collectable items, managed by the container; */
-	D_VMCODE ,
-	D_VMCODE2 , /* for DMap, compare code and operands only; */
-	D_TOKEN ,   /* for DArray only; */
-	D_STRING ,
-	D_VECTOR ,
-	D_ARRAY ,
-	D_MAP ,
-	D_VOID2 /* a pair of pointer; */
+	DAO_ENUM_ANY = END_EXTRA_TYPES,
+	DAO_ENUM_SYM ,
+	DAO_ENUM_STATE ,
+	DAO_ENUM_FLAG ,
+	DAO_ENUM_BOOL ,
+	DAO_CDATA_PTR ,  /* opaque C/C++ data, not owned by the wrapper */
+	DAO_CDATA_CXX ,  /* opaque C/C++ data, owned by the wrapper */
+	DAO_PAIR ,
+	DAO_CFUNCTION ,
+	DAO_ROUTINES ,
+	DAO_INVAR ,
+	END_SUB_TYPES
 };
 
-/* It is for the typing system, to decide when to specialize a routine.
- * when any or ? match to @X in parameter list, no routine specialization.
- *   ls = {};
- *   ls.append( "" );
- *   ls2 = { 1, 3, 4 };
- *   ls2.append( "" );
- */
-enum DaoMatchType
+enum DaoContainerDataTypes
 {
-	DAO_MT_NOT ,
-	DAO_MT_NEGLECT , /* for less strict checking when a parameter is any or udf */
-	DAO_MT_ANYUDF ,
-	DAO_MT_INIT ,
-	DAO_MT_UDF ,
-	DAO_MT_ANYX , /* match any to X */
-	DAO_MT_ANY , /* match to type "any" */
-	DAO_MT_SUB ,
-	DAO_MT_SIM , /* int, float, double */
-	DAO_MT_EQ ,
-	DAO_MT_EXACT /* value to value type */
+	DAO_DATA_NULL ,
+	DAO_DATA_VALUE ,   /* garbage collectable items, managed by the container; */
+	DAO_DATA_VALUE2 ,  /* same as DAO_DATA_VALUE, except more strict comparing as map keys; */
+	DAO_DATA_VALUE3 ,  /* same as DAO_DATA_VALUE2,except more strict comparing as map keys; */
+	DAO_DATA_VMCODE ,
+	DAO_DATA_VMCODE2 , /* for DMap, compare code and operands only; */
+	DAO_DATA_TOKEN ,   /* for DList only; */
+	DAO_DATA_COMPLEX ,
+	DAO_DATA_STRING ,
+	DAO_DATA_ARRAY ,
+	DAO_DATA_LIST ,
+	DAO_DATA_MAP ,
+	DAO_DATA_VOID2 /* a pair of pointer; */
+};
+
+
+/*
+// Dao type matching states:
+// -- These states give scores to each type of type matching.
+//    Useful for resolving overloaded routines;
+// -- For loose matching, the state with smaller score is used in case
+//    that multiple states can be assigned to the same matching.
+//    For example, matching a type holder type "@T" to "any" should give
+//    DAO_MT_THTX instead of DAO_MT_ANY;
+// -- Undefined types are treated as type holder types.
+//    They simply hold some types that are not successfully inferred;
+// -- DAO_MT_THT should have higher score than DAO_MT_SUB and DAO_MT_SIM.
+//    Because DAO_MT_THT means starting a type association for the type
+//    holder type, and should be considered more or less as precise as
+//    DAO_MT_EQ;
+// -- DAO_MT_EXACT is more precise than DAO_MT_EQ, as it means not only
+//    type matching but also value matching.
+*/
+enum DaoTypeMatchState
+{
+	DAO_MT_NOT   = 0  , /* Type not matching; */
+	DAO_MT_LOOSE = 10 , /* Loose matching not covered by the following cases; */
+	DAO_MT_THTX  = 20 , /* Loose matching of a type holder type (THT) to any other type; */
+	DAO_MT_ANYX  = 30 , /* Loose matching of the "any" type to any other type; */
+	DAO_MT_EMPTY = 40 , /* Loose matching of an empty container value to a container type; */
+	DAO_MT_ANY   = 50 , /* Matching of any type to the "any" type; */
+	DAO_MT_SUB   = 60 , /* Matching of a sub type to a parent type; */
+	DAO_MT_SIM   = 70 , /* Matching of a type to a compatible type (eg, int to float); */
+	DAO_MT_THT   = 80 , /* Matching of any type to a type holder type; */
+	DAO_MT_EQ    = 90 , /* Type precisely matching; */
+	DAO_MT_EXACT = 100  /* Type and value precisely matching; */
 };
 
 enum DaoVarDeclaration
@@ -108,98 +133,148 @@ enum DaoVarDeclaration
 	DAO_DECL_GLOBAL     = (1<<2), /* for compiling only */
 	DAO_DECL_STATIC     = (1<<3), /* for compiling only */
 	DAO_DECL_VAR        = (1<<4), /* for compiling only */
+	DAO_DECL_INVAR      = (1<<5), /* for compiling only */
 	DAO_DECL_CONST      = (1<<7)  /* using the highest bit in the trait field */
 };
+
+/* Lowest bit set to 1 for constant storage: */
 enum DaoVarStorage
 {
-	DAO_LOCAL_VARIABLE  = 0,
-	DAO_LOCAL_CONSTANT  = 1, /* lowest bit set to 1 for constant */
-	DAO_STATIC_VARIABLE = 2,
-	DAO_OBJECT_VARIABLE = 4,
-	DAO_CLASS_VARIABLE  = 6,
-	DAO_CLASS_CONSTANT  = 7, /* lowest bit set to 1 for constant */
-	DAO_GLOBAL_VARIABLE = 8,
-	DAO_GLOBAL_CONSTANT = 9  /* lowest bit set to 1 for constant */
+	DAO_LOCAL_VARIABLE   = 0,
+	DAO_LOCAL_CONSTANT   = 1,
+	DAO_OBJECT_VARIABLE  = 2,
+	DAO_CLASS_VARIABLE   = 4,
+	DAO_CLASS_CONSTANT   = 5,
+	DAO_GLOBAL_VARIABLE  = 6,
+	DAO_GLOBAL_CONSTANT  = 7,
+	DAO_STATIC_VARIABLE  = 8,
+	DAO_CLOSURE_VARIABLE = 14 /* for compiling only; */
 };
 
 enum DaoValueTrait
 {
 	DAO_VALUE_CONST   = (1<<1), /* constant data object */
 	DAO_VALUE_NOCOPY  = (1<<2), /* data object not for copying */
-	DAO_VALUE_WIMETA  = (1<<3), /* data object with meta field */
-	DAO_VALUE_DELAYGC = (1<<4), /* objects with this trait are scanned less frequently by GC */
-	DAO_VALUE_BROKEN = (1<<5) /* reference already broken (may have not been set to NULL) by GC */
+	DAO_VALUE_DELAYGC = (1<<3), /* objects with this trait are scanned less frequently by GC */
+	DAO_VALUE_BROKEN  = (1<<4)  /* reference already broken (may not yet set to NULL) by GC */
 };
 enum DaoTypeAttribs
 {
-	DAO_TYPE_SPEC = (1<<0),  /* specializable type, with at least one type holder; */
-	DAO_TYPE_UNDEF = (1<<1), /* undefined type, with at least one undefined type; */
-	DAO_TYPE_SELF  = (1<<2), /* routine type that has self parameter; */
-	DAO_TYPE_VARIADIC = (1<<3), /* variadic type (routine or tuple); */
-	DAO_TYPE_COROUTINE = (1<<4), /* routine type that can run as coroutine; */
-	DAO_TYPE_SELFNAMED = (1<<5)
+	DAO_TYPE_SPEC      = (1<<0), /* specializable type, with at least one type holder; */
+	DAO_TYPE_UNDEF     = (1<<1), /* undefined type, with at least one undefined type; */
+	DAO_TYPE_SELF      = (1<<2), /* routine type that has self parameter; */
+	DAO_TYPE_VARIADIC  = (1<<3), /* variadic type (routine or tuple); */
+	DAO_TYPE_PARNAMED  = (1<<4), /* name:type or name=type; */
+	DAO_TYPE_SELFNAMED = (1<<5), /* self:type; */
+	DAO_TYPE_CODESECT  = (1<<6)
 };
 enum DaoCaseMode
 {
 	DAO_CASE_ORDERED ,
 	DAO_CASE_UNORDERED ,
+	DAO_CASE_TYPES ,
 	DAO_CASE_INTS , /* ordered integer cases; TODO optimize, enums */
 	DAO_CASE_TABLE
 };
 
 enum DaoCallMode
 {
-	DAO_CALL_INIT = (1<<8), /* call to initialize a parent object */
-	DAO_CALL_TAIL = (1<<9), /* may do tail call */
-	DAO_CALL_NOVIRT = (1<<10), /* call as non-virtual function */
-	DAO_CALL_COROUT = (1<<11), /* call for creating a coroutine vm process */
-	DAO_CALL_EXPAR = (1<<12), /* expand the last parameter of tuple type */
-	DAO_CALL_BLOCK = (1<<13) /* call with code block */
+	DAO_CALL_INIT   = (1<<8),  /* call to initialize a parent object; */
+	DAO_CALL_NOSELF = (1<<9),  /* call without implicit self; */
+	DAO_CALL_EXPAR  = (1<<10), /* expand the last parameter of tuple type; */
+	DAO_CALL_BLOCK  = (1<<11), /* call with code block; */
+	DAO_CALL_DECSUB = (1<<12), /* call decorated function; */
+	DAO_CALL_ASYNC  = (1<<13), /* asynchronous call; */
+	DAO_CALL_TAIL   = (1<<14), /* may do tail call; */
+	DAO_CALL_FAST   = (1<<15)  /* may do fast call; */
 };
-enum DaoVmProcPauseType
+enum DaoProcessPauseType
 {
-	DAO_VMP_NOPAUSE ,
-	DAO_VMP_ASYNC ,  /* by join mode of asynchronous call */
-	DAO_VMP_YIELD ,  /* by coroutine */
-	DAO_VMP_NATIVE_SUSPENSION
+	DAO_PAUSE_NONE ,
+	DAO_PAUSE_FUTURE_VALUE ,    /* future::value(); */
+	DAO_PAUSE_FUTURE_WAIT ,     /* future::wait(); */
+	DAO_PAUSE_CHANNEL_SEND ,    /* channel::send(); */
+	DAO_PAUSE_CHANNEL_RECEIVE , /* channel::send(); */
+	DAO_PAUSE_CHANFUT_SELECT ,  /* mt::select(); */
+	DAO_PAUSE_COROUTINE_YIELD   /* coroutine; */
 };
 
-enum DaoDataPermission
+enum DaoFieldPermission
 {
-	DAO_DATA_PRIVATE = 1,
-	DAO_DATA_PROTECTED ,
-	DAO_DATA_PUBLIC
+	DAO_PERM_NONE = 0,
+	DAO_PERM_PRIVATE ,
+	DAO_PERM_PROTECTED ,
+	DAO_PERM_PUBLIC
 };
 enum DaoClassAttrib
 {
-	DAO_CLS_AUTO_DEFAULT = 1,
-	DAO_CLS_ASYNCHRONOUS = 2
+	DAO_CLS_AUTO_INITOR   = 1,
+	DAO_CLS_PRIVATE_VAR   = 2,
+	DAO_CLS_PROTECTED_VAR = 4,
+	DAO_CLS_ASYNCHRONOUS  = 8
 };
 enum DaoRoutineAttrib
 {
-	DAO_ROUT_PARSELF   = 1,       /* need self parameter */
-	DAO_ROUT_NEEDSELF  = (1<<1),  /* for routines use class instance variable(s) */
-	DAO_ROUT_VIRTUAL   = (1<<2),  /* virtual function */
-	DAO_ROUT_STATIC    = (1<<3),  /* static function */
-	DAO_ROUT_PRIVATE   = (1<<4),  /* private method */
-	DAO_ROUT_PROTECTED = (1<<5),  /* protected method */
-	DAO_ROUT_DEFERRED  = (1<<6),  /* deferred closure */
-	DAO_ROUT_PASSRET   = (1<<7),  /* pass returned value to deferred closure */
-	DAO_ROUT_INITOR    = (1<<8),  /* class constructor */
-	DAO_ROUT_MAIN      = (1<<9)   /* main function */
+	DAO_ROUT_PARSELF   = (1<<0),   /* need self parameter */
+	DAO_ROUT_INVAR     = (1<<1),   /* invariable method */
+	DAO_ROUT_STATIC    = (1<<2),   /* static function */
+	DAO_ROUT_INTERFACE = (1<<3),   /* interface function */
+	DAO_ROUT_DEFER     = (1<<4),   /* defer block as a closure */
+	DAO_ROUT_DEFER_RET = (1<<5),   /* defer block that may return values */
+	DAO_ROUT_CODESECT  = (1<<6),   /* code section routine */
+	DAO_ROUT_DECORATOR = (1<<7),   /* function decorator */
+	DAO_ROUT_INITOR    = (1<<8),   /* class/ctype constructor */
+	DAO_ROUT_CASTOR    = (1<<9),   /* user defined casting method */
+	DAO_ROUT_MAIN      = (1<<10),  /* main function */
+	DAO_ROUT_PRIVATE   = (1<<11),  /* private method */
+	DAO_ROUT_PROTECTED = (1<<12),  /* protected method */
+	DAO_ROUT_REUSABLE  = (1<<13)   /* stack data for the routine is reusable */
 };
 
-#define DAO_TYPER_PRIV_FREE  (DAO_ROUT_MAIN<<1)
-#define DAO_OPER_OVERLOADED  (DAO_TYPER_PRIV_FREE<<1)
+enum DaoConstEvalMode
+{
+	DAO_CONST_EVAL_METHDEF  = 1,
+	DAO_CONST_EVAL_GETVALUE = 2
+};
+
+enum DaoRoutineModes
+{
+	DAO_ROUT_MODE_DEBUG = 1
+};
+
+#define DAO_TYPER_FREE       (DAO_ROUT_REUSABLE<<1)
+#define DAO_OPER_OVERLOADED  (DAO_TYPER_FREE<<1)
 
 enum DaoGlobalConstOffset
 {
-	DVR_NSC_NONE = LOOKUP_BIND( DAO_GLOBAL_CONSTANT, DAO_DATA_PUBLIC, 0, 1 ) ,
-	DVR_NSC_MAIN = LOOKUP_BIND( DAO_GLOBAL_CONSTANT, DAO_DATA_PUBLIC, 0, 2 )
+	DVR_NSC_NONE = LOOKUP_BIND( DAO_GLOBAL_CONSTANT, DAO_PERM_PUBLIC, 0, 1 ) ,
+	DVR_NSC_MAIN = LOOKUP_BIND( DAO_GLOBAL_CONSTANT, DAO_PERM_PUBLIC, 0, 2 )
 };
-enum DaoGlobalVarOffset
+
+enum DaoExceptionType
 {
-	DVR_NSV_EXCEPTIONS
+	DAO_EXCEPTION = 0,
+	DAO_WARNING ,
+	DAO_ERROR ,
+
+	DAO_ERROR_FIELD ,
+	DAO_ERROR_FIELD_NOTEXIST ,
+	DAO_ERROR_FIELD_NOTPERMIT ,
+	DAO_ERROR_FLOAT ,
+	DAO_ERROR_FLOAT_DIVBYZERO ,
+	DAO_ERROR_FLOAT_OVERFLOW ,
+	DAO_ERROR_FLOAT_UNDERFLOW ,
+	DAO_ERROR_INDEX ,
+	DAO_ERROR_INDEX_OUTOFRANGE ,
+	DAO_ERROR_KEY ,
+	DAO_ERROR_KEY_NOTEXIST ,
+	DAO_ERROR_PARAM ,
+	DAO_ERROR_SYNTAX ,
+	DAO_ERROR_TYPE ,
+	DAO_ERROR_VALUE ,
+	DAO_ERROR_FILE ,
+
+	ENDOF_BASIC_EXCEPT
 };
 
 enum DaoArithOperType{
@@ -264,26 +339,18 @@ enum DaoCtInfoId
 	DAO_CTW_NULL =0,
 	DAO_CTW_INTERNAL ,
 	DAO_CTW_LIMIT_PAR_NUM ,
-	DAO_CTW_UN_DEFINED ,
-	DAO_CTW_UN_PAIRED ,
 	DAO_CTW_IS_EXPECTED ,
-	DAO_CTW_UN_EXPECTED ,
-	DAO_CTW_UN_DECLARED ,
 	DAO_CTW_WAS_DEFINED ,
-	DAO_WARN_STATEMENT_SEPERATION ,
+	DAO_WARN_STATEMENT_SEPARATION ,
 	DAO_WARN_ASSIGNMENT ,
 	DAO_WARN_GET_SETTER ,
 	DAO_NO_METHOD_TO_USE ,
-	DAO_NO_PUBLIC_IN_ASYNCLASS ,
-	DAO_NO_STATIC_IN_ASYNCLASS ,
 	DAO_SYMBOL_POSSIBLY_UNDEFINED ,
 	DAO_SYMBOL_NOT_DEFINED ,
 	DAO_SYMBOL_WAS_DEFINED ,
 	DAO_SYMBOL_NEED_CONSTANT ,
 	DAO_SYMBOL_NEED_CLASS ,
 	DAO_SYMBOL_NEED_CLASS_CTYPE ,
-	DAO_SYMBOL_NEED_NON_ASYNCLASS ,
-	DAO_SYMBOL_NEED_ASYNCLASS ,
 	DAO_SYMBOL_NEED_INTERFACE ,
 	DAO_SYMBOL_NEED_BINDABLE ,
 	DAO_TOKEN_NEED_STRING ,
@@ -307,24 +374,26 @@ enum DaoCtInfoId
 	DAO_INVALID_STORAGE ,
 	DAO_INVALID_SHARED ,
 	DAO_INVALID_LITERAL ,
-	DAO_INVALID_RADIX ,
-	DAO_INVALID_DIGIT ,
+	DAO_INVALID_INDEX ,
 	DAO_INVALID_TYPE_NAME ,
 	DAO_INVALID_TYPE_FORM ,
 	DAO_INVALID_REFERENCE ,
 	DAO_INVALID_EXPRESSION ,
 	DAO_INVALID_STATEMENT ,
+	DAO_INVALID_UNCLOSED_SCOPE ,
 	DAO_INVALID_SCOPE_ENDING ,
 	DAO_INVALID_FUNCTIONAL ,
+	DAO_INVALID_DECO_PATTERN ,
 	DAO_INVALID_DEFINITION ,
 	DAO_INVALID_ENUM_DEFINITION ,
 	DAO_INVALID_CLASS_DEFINITION ,
-	DAO_INVALID_ASYNC_CLASS_DEFINITION ,
 	DAO_INVALID_FUNCTION_DEFINITION ,
+	DAO_INVALID_NAMESPACE_DEFINITION ,
 	DAO_INVALID_INTERFACE_DEFINITION ,
 	DAO_INVALID_FUNCTION_DECORATION ,
 	DAO_INVALID_PARENT_CLASS ,
-	DAO_INVALID_USE_STMT ,
+	DAO_INVALID_MIXIN_CLASS ,
+	DAO_INVALID_IMPORT_STMT ,
 	DAO_INVALID_TYPE_ALIAS ,
 	DAO_INVALID_BINDING ,
 	DAO_INVALID_TYPEDEF ,
@@ -352,8 +421,10 @@ enum DaoCtInfoId
 	DAO_TYPE_EXPECTED ,
 	DAO_TYPE_NO_DEFAULT ,
 	DAO_ROUT_NEED_RETURN_TYPE ,
+	DAO_ROUT_INVALID_DECORATOR ,
 	DAO_ROUT_INVALID_OPERATOR ,
-	DAO_ROUT_CONSTRU_RETURN ,
+	DAO_ROUT_INVALID_DECO_PARAM ,
+	DAO_ROUT_INVALID_RETURN ,
 	DAO_ROUT_NEED_IMPLEMENTATION ,
 	DAO_ROUT_REDUNDANT_IMPLEMENTATION ,
 	DAO_ROUT_NOT_DECLARED ,
@@ -364,68 +435,23 @@ enum DaoCtInfoId
 	DAO_ROUT_WRONG_SIGNATURE ,
 	DAO_CONSTR_NOT_DEFINED ,
 	DAO_CASE_NOT_VALID ,
+	DAO_CASE_NOT_TYPE ,
 	DAO_CASE_NOT_CONSTANT ,
 	DAO_CASE_DUPLICATED ,
 	DAO_DEFAULT_DUPLICATED ,
+	DAO_EVAL_EXCEPTION ,
 	DAO_LOAD_CYCLIC ,
 	DAO_DISABLED_REGEX ,
-	DAO_DISABLED_LONGINT ,
 	DAO_DISABLED_NUMARRAY ,
-	DAO_DISABLED_ASYNCLASS ,
-	DAO_DISABLED_TEMPCLASS ,
-	DAO_DISABLED_DYNCLASS ,
 	DAO_DISABLED_DECORATOR ,
-	DAO_CTW_PAR_NOT_CST_DEF ,
-	DAO_CTW_PAR_INVALID ,
-	DAO_CTW_PAR_INVA_NUM ,
-	DAO_CTW_PAR_INVA_NAMED ,
-	DAO_CTW_PAR_INVA_CONST ,
-	DAO_CTW_MY_NOT_CONSTR ,
-	DAO_CTW_UNCOMP_PREFIX ,
-	DAO_CTW_FOR_INVALID ,
-	DAO_CTW_FORIN_INVALID ,
-	DAO_CTW_CASE_INVALID ,
-	DAO_CTW_CASE_NOT_CST ,
-	DAO_CTW_CASE_NOT_SWITH ,
 	DAO_CTW_LOAD_INVALID ,
-	DAO_CTW_PATH_INVALID ,
-	DAO_CTW_LOAD_INVALID_VAR ,
 	DAO_CTW_LOAD_INVA_MOD_NAME ,
 	DAO_CTW_LOAD_FAILED ,
 	DAO_CTW_LOAD_CANCELLED ,
-	DAO_CTW_LOAD_VAR_NOT_FOUND ,
-	DAO_CTW_LOAD_REDUNDANT ,
-	DAO_CTW_CST_INIT_NOT_CST ,
-	DAO_CTW_MODIFY_CONST ,
-	DAO_CTW_EXPR_INVALID ,
 	DAO_CTW_ENUM_INVALID ,
 	DAO_CTW_ENUM_LIMIT ,
-	DAO_CTW_INVA_MUL_ASSN ,
-	DAO_CTW_INVA_LITERAL ,
-	DAO_CTW_INVA_QUOTES ,
-	DAO_CTW_ASSIGN_INSIDE ,
-	DAO_CTW_DAO_H_UNMATCH ,
-	DAO_CTW_INVA_EMBED ,
 	DAO_CTW_INVA_SYNTAX ,
-	DAO_CTW_ASSN_UNMATCH ,
-	DAO_CTW_VAR_REDEF ,
-	DAO_CTW_INV_MAC_DEFINE ,
-	DAO_CTW_INV_MAC_FIRSTOK ,
-	DAO_CTW_INV_MAC_OPEN ,
-	DAO_CTW_INV_MAC_VARIABLE ,
-	DAO_CTW_INV_MAC_REPEAT ,
-	DAO_CTW_INV_MAC_SPECTOK ,
-	DAO_CTW_INV_MAC_INDENT ,
-	DAO_CTW_REDEF_MAC_MARKER ,
-	DAO_CTW_UNDEF_MAC_MARKER ,
-	DAO_CTW_INV_MAC_LEVEL ,
-	DAO_CTW_INV_TYPE_FORM ,
-	DAO_CTW_INV_TYPE_NAME ,
 	DAO_CTW_INV_CONST_EXPR ,
-	DAO_CTW_NO_PERMIT ,
-	DAO_CTW_TYPE_NOMATCH ,
-	DAO_CTW_FAIL_BINDING ,
-	DAO_CTW_FEATURE_DISABLED ,
 	DAO_CTW_OBSOLETE_SYNTAX ,
 	DAO_CTW_END
 };
@@ -433,25 +459,14 @@ enum DaoCtInfoId
 extern const char* getCtInfo( int tp );
 extern const char* getRtInfo( int tp );
 
-typedef struct DaoExceptionTripple
-{
-	int         code;
-	const char *name;
-	const char *info;
-}DaoExceptionTripple;
-
-extern const char* const daoExceptionName[];
-extern const char* const daoExceptionInfo[];
-
-DAO_DLL const char* getExceptName( int id );
+extern const char* const daoExceptionNames[];
+extern const char* const daoExceptionTitles[];
 
 extern const char* const coreTypeNames[];
 extern const char *const daoBitBoolArithOpers[];
 extern const char *const daoBitBoolArithOpers2[];
 
-extern const char *daoRoutineCodeHeader;
-extern const char *daoRoutineCodeFormat;
-
-extern const char utf8_markers[256];
+DAO_DLL const char *daoRoutineCodeHeader;
+DAO_DLL const char *daoRoutineCodeFormat;
 
 #endif

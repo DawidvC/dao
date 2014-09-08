@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,15 +14,16 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #ifndef DAO_PROCESS_H
@@ -36,10 +37,10 @@
 #include"daoThread.h"
 #include"daoOptimizer.h"
 
-#define DVM_FRAME_RUNNING (1<<0)
-#define DVM_MAKE_OBJECT   (1<<5)
-#define DVM_FRAME_SECT    (1<<6)
-#define DVM_FRAME_KEEP    (1<<7)
+#define DVM_FRAME_RUNNING  (1<<0)
+#define DVM_FRAME_FINISHED (1<<1)
+#define DVM_FRAME_SECT     (1<<5)
+#define DVM_FRAME_KEEP     (1<<6)
 
 
 struct DaoStackFrame
@@ -53,52 +54,54 @@ struct DaoStackFrame
 	daoint          deferBase;  /* the offset on the DaoProcess::defers list; */
 	daoint          exceptBase; /* the offset on the DaoProcess::exceptions list; */
 
-	DaoVmCode      *codes; /* = routine->vmCodes->codes; */
-	DaoType       **types;
-	DaoType        *retype;
-	DaoRoutine     *routine;
-	DaoObject      *object;
-	DaoProcess     *outer;
+	DaoVmCode      *codes;    /* virtual machine codes for the routine; */
+	DaoType       **types;    /* types of the local variables in the routine; */
+	DaoType        *retype;   /* returning type for the called routine or function; */
+	DaoRoutine     *routine;  /* the called routine or function; */
+	DaoObject      *object;   /* the self object for the method call; */
+	DaoProcess     *process;  /* the host process for the frame; */
+	DaoProcess     *outer;    /* the host process for the outer code section; */
 
-	DaoStackFrame  *active;
-	DaoStackFrame  *sect; /* original frame of a code section frame; */
-	DaoStackFrame  *prev;
-	DaoStackFrame  *next;
+	DaoStackFrame  *active;  /* active frame that corresponds to DaoProcess::activeXXX; */
+	DaoStackFrame  *host;    /* host frame for code sections or defer blocks; */
+	DaoStackFrame  *prev;    /* the previous frame in the stack; */
+	DaoStackFrame  *next;    /* the next frame in the stack; */
 };
 
 /*
-   The stack structure of a Dao virtual machine process:
-
-   1. The call/stack frames are organized into a linked list structure;
-
-   2. The first frame is auxialiary frame that contains one stack value,
-   which will be used to hold the returned value of the process (when the
-   DVM_RETURN instruction is executed while the_current_frame->returning==-1);
-
-   3. The stack values are stored in a dynamic array which can grow when
-   a new frame is pushed into the stack;
-
-   4. When the value stack grows, it must have extra space that can hold
-   the maximum number of parameters (namely, @stackSize > @stackTop + DAO_MAX_PARAM);
-
-   5. When a Dao function or C function is called, the parameters must be
-   passed to the stack values starting from @stackTop, then a new frame can
-   be push. In this way, it will avoid of the problem of invalidating some of
-   the pointers when the stack is growed;
-
-   6. After the value stack is expanded, the expanded part should be set to zero;
-   the rest should be kept intact. The values from @stackTop to @stackSize can be
-   collected when it is convenient, not each time when a frame is popped off.
- */
+// The stack structure of a Dao virtual machine process:
+//
+// 1. The call/stack frames are organized into a linked list structure;
+//
+// 2. The first frame is an auxialiary frame that contains one stack value,
+//    which will be used to hold the returned value of the process (when the
+//    DVM_RETURN instruction is executed while the_current_frame->returning==-1);
+//
+// 3. The stack values are stored in a dynamic array which can grow when
+//    a new frame is pushed into the stack;
+//
+// 4. When the value stack grows, it must have extra space that can hold
+//    the maximum number of parameters (namely, @stackSize > @stackTop + DAO_MAX_PARAM);
+//
+// 5. When a Dao function or C function is called, the parameters must be
+//    passed to the stack values starting from @stackTop, then a new frame can
+//    be push. In this way, it will avoid of the problem of invalidating some of
+//    the pointers when the stack is growed;
+//
+// 6. After the value stack is expanded, the expanded part should be set to zero;
+//    the rest should be kept intact. The values from @stackTop to @stackSize can be
+//    collected when it is convenient, not each time when a frame is popped off.
+*/
 
 struct DaoProcess
 {
-	DAO_DATA_COMMON;
+	DAO_VALUE_COMMON;
 
 	DaoVmSpace     *vmSpace;
 
-	DaoStackFrame  *firstFrame; /* the first frame */
-	DaoStackFrame  *topFrame;   /* top call frame */
+	DaoStackFrame  *firstFrame; /* the first frame; */
+	DaoStackFrame  *baseFrame;  /* the base frame when process started or resumed; */
+	DaoStackFrame  *topFrame;   /* the top call frame; */
 
 	DaoVmCode      *activeCode;
 	DaoRoutine     *activeRoutine;
@@ -114,24 +117,22 @@ struct DaoProcess
 	uchar_t         parCount;
 	uchar_t         pauseType;
 	uchar_t         status;
-	uchar_t         stopit;
+	uchar_t         active;
+	ushort_t        returned;
 
-	DaoType        *abtype; /* for coroutine */
 	DaoFuture      *future;
 	DaoStream      *stdioStream;
 
-	DArray         *defers;
-	DArray         *exceptions;
-	DArray         *factory;
+	DList          *defers;
+	DList          *exceptions;
+	DList          *factory;
 
-#ifdef DAO_WITH_THREAD
-	daoint          depth;
-	DCondVar       *condv; /* condition variable for resuming suspended process; */
-	DMutex         *mutex; /* mutex for mt.critical::{} */
-#endif
-
+	/*
+	// Process auxiliary data (process specific data):
+	// Pairs of deallocation function pointer and data pointer;
+	*/
+	DMap           *aux;
 	DString        *mbstring;
-	DMap           *regexCaches; /* DHash<DString*,DString*> */
 };
 
 /* Create a new virtual machine process */
@@ -139,7 +140,8 @@ DAO_DLL DaoProcess* DaoProcess_New( DaoVmSpace *vms );
 DAO_DLL void DaoProcess_Delete( DaoProcess *self );
 
 DAO_DLL DaoStackFrame* DaoProcess_PushFrame( DaoProcess *self, int size );
-DAO_DLL DaoStackFrame* DaoProcess_PushSectionFrame( DaoProcess *self );
+DAO_DLL DaoStackFrame* DaoProcess_FindSectionFrame( DaoProcess *self );
+DAO_DLL DaoVmCode* DaoProcess_InitCodeSection( DaoProcess *self, int argcount );
 DAO_DLL void DaoProcess_PopFrame( DaoProcess *self );
 DAO_DLL void DaoProcess_PopFrames( DaoProcess *self, DaoStackFrame *rollback );
 
@@ -152,35 +154,41 @@ DAO_DLL int DaoProcess_PushCallable( DaoProcess *self, DaoRoutine *M, DaoValue *
 
 DAO_DLL void DaoProcess_InterceptReturnValue( DaoProcess *self );
 
+DAO_DLL void DaoProcess_MakeTuple( DaoProcess *self, DaoTuple *tuple, DaoValue *its[], int N );
+DAO_DLL DaoRoutine* DaoProcess_PassParams( DaoProcess *self, DaoRoutine *routine, DaoType *hostype, DaoValue *svalue, DaoValue *values[], DaoType *types[], int count, int code );
+
 DAO_DLL int DaoProcess_Call( DaoProcess *self, DaoRoutine *f, DaoValue *o, DaoValue *p[], int n );
 
 DAO_DLL void DaoProcess_CallFunction( DaoProcess *self, DaoRoutine *func, DaoValue *p[], int n );
 
-/* Execute from the top of the calling stack */
+/*
+// Execute from the top of the calling stack.
+// Return immediately when the process is suspended.
+*/
+DAO_DLL int DaoProcess_Start( DaoProcess *self );
+/*
+// Execute from the top of the calling stack.
+// This function will block when the process become suspended,
+// and block until the suspending state changes.
+*/
 DAO_DLL int DaoProcess_Execute( DaoProcess *self );
 
-/* Acquire and release the condition variable: */
-DAO_DLL void DaoProcess_AcquireCV( DaoProcess *self );
-DAO_DLL void DaoProcess_ReleaseCV( DaoProcess *self );
-DAO_DLL void DaoProcess_Suspend( DaoProcess *self, int type );
 
-DAO_DLL int DaoProcess_PutReference( DaoProcess *self, DaoValue *refer );
 DAO_DLL DaoValue* DaoProcess_SetValue( DaoProcess *self, ushort_t reg, DaoValue *value );
 
-DAO_DLL void DaoProcess_PrintException( DaoProcess *self, int clear );
+DAO_DLL void DaoProcess_PrintException( DaoProcess *self, DaoStream *stream, int clear );
 
-DAO_DLL DaoValue* DaoProcess_MakeConst( DaoProcess *self );
+DAO_DLL void DaoProcess_Trace( DaoProcess *self, int depth );
+
+DAO_DLL DaoValue* DaoProcess_MakeConst( DaoProcess *self, int mode );
+
+DAO_DLL void* DaoProcess_GetAuxData( DaoProcess *self, void *key );
+DAO_DLL void* DaoProcess_SetAuxData( DaoProcess *self, void *key, void *value );
 
 
 
 typedef struct DaoJIT         DaoJIT;
 typedef struct DaoJitCallData DaoJitCallData;
-
-typedef void (*DaoJIT_InitFPT)( DaoVmSpace*, DaoJIT* );
-typedef void (*DaoJIT_QuitFPT)();
-typedef void (*DaoJIT_FreeFPT)( void *jitdata );
-typedef void (*DaoJIT_CompileFPT)( DaoRoutine *routine, DaoOptimizer *optimizer );
-typedef void (*DaoJIT_ExecuteFPT)( DaoProcess *process, DaoJitCallData *data, int jitcode );
 
 struct DaoJIT
 {
@@ -206,5 +214,9 @@ struct DaoJitCallData
 
 	DaoProcess **processes;
 };
+
+
+/* Mersenne twister random number in [0,1] interval: */
+DAO_DLL double DaoProcess_Random( DaoProcess *self );
 
 #endif

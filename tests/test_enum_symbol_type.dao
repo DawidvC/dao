@@ -23,15 +23,15 @@ io.writeln( Bool::False )
 io.writeln( Bool.True )
 @[test()]
 @[test()]
-$False=0
-$True=1
+$False(0)
+$True(1)
 @[test()]
 
 
 @[test()]
 switch( Bool.False ){
-case Bool::False : io.writeln( 'Bool::False' )
-case Bool::True  : io.writeln( 'Bool::True' )
+case Bool::False : io.writeln( "Bool::False" )
+case Bool::True  : io.writeln( "Bool::True" )
 }
 @[test()]
 @[test()]
@@ -42,8 +42,8 @@ Bool::False
 
 @[test()]
 switch( (Bool) $True ){
-case Bool::False : io.writeln( 'Bool::False' )
-case Bool::True  : io.writeln( 'Bool::True' )
+case Bool::False : io.writeln( "Bool::False" )
+case Bool::True  : io.writeln( "Bool::True" )
 }
 @[test()]
 @[test()]
@@ -57,7 +57,7 @@ bl : Bool = $True
 io.writeln( bl )
 @[test()]
 @[test()]
-$True=1
+$True(1)
 @[test()]
 
 
@@ -67,16 +67,6 @@ a = True;
 @[test()]
 @[test()]
 {{ERROR}} .* {{At line}} .* {{Symbol not defined}}
-@[test()]
-
-
-
-@[test()]
-use enum Bool
-a = True
-@[test()]
-@[test()]
-1
 @[test()]
 
 

@@ -6,8 +6,8 @@ daovm = DaoMake::FindPackage( "Dao", $REQUIRED )
 if( daovm == none ) return
 
 
-chartype_objs = daotests.AddObjects( { 'dao_CharType.c' } )
-chartype_dll  = daotests.AddSharedLibrary( 'CharType', chartype_objs )
+chartype_objs = daotests.AddObjects( { "dao_CharType.c" } )
+chartype_dll  = daotests.AddSharedLibrary( "dao_CharType", chartype_objs )
 
 chartype_dll.UseSharedLibrary( daovm, "dao" )
 chartype_dll.EnableDynamicLinking()
@@ -25,15 +25,29 @@ daotests.AddTest( "Strings", "test_strings.dao" )
 test_enum = daotests.AddTest( "EnumSymbol", "test_enum_symbol_def.dao" )
 test_enum.AddTest( "test_enum_symbol_type.dao" )
 
-test_routine = daotests.AddTest( "Routine", "test_routine.dao" )
-test_routine.AddTest( "test_coroutine.dao" )
-test_routine.AddTest( "test_anonymous_routine.dao" )
+daotests.AddTest( "Arrays", "test_arrays.dao" )
 
-test_class = daotests.AddTest( "Class", "test_class_inheritance.dao" )
+test_control = daotests.AddTest( "Controls", "test_if_else.dao" )
+test_control.AddTest( "test_for.dao" )
+test_control.AddTest( "test_while.dao" )
+test_control.AddTest( "test_switch.dao" )
+
+test_routine = daotests.AddTest( "Routine", "test_routine.dao" )
+test_routine.AddTest( "test_anonymous_routine.dao" )
+test_routine.AddTest( "test_code_section.dao" )
+test_routine.AddTest( "test_decorator.dao" )
+
+test_class = daotests.AddTest( "Class", "test_class.dao" )
+test_class.AddTest( "test_class_inheritance.dao" )
+test_class.AddTest( "test_class_static_fields.dao" )
+test_class.AddTest( "test_class_operator.dao" )
+test_class.AddTest( "test_class_mixin.dao" )
 
 test_interface = daotests.AddTest( "Interface", "test_interface.dao" )
 
 test_regex = daotests.AddTest( "Regex", "test_regex_char_class.dao" )
 test_regex.AddDependency( chartype_dll )
+
+daotests.AddTest( "ErrorHandling", "test_error_handling.dao" )
 
 daotests.AddTest( "Misc", "test_misc.dao" )

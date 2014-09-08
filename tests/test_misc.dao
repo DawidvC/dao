@@ -4,6 +4,7 @@ a : array<any>
 @[test(code_01)]
 
 @[test(output_01)]
+Invalid %s type %s form
 @[test(output_01)]
 
 @[test(code_02)]
@@ -24,7 +25,7 @@ Integer    ::= DecInteger | HexInteger
 #}
 
 @[test(code_03)]
-	io.writef( '%g', .5 )
+	io.writef( "%g", .5 )
 @[test(code_03)]
 @[test(code_03)]
 	0.5
@@ -32,7 +33,7 @@ Integer    ::= DecInteger | HexInteger
 
 
 @[test(code_03)]
-	io.writef( '%g', 123. )
+	io.writef( "%g", 123. )
 @[test(code_03)]
 @[test(code_03)]
 	123
@@ -66,7 +67,7 @@ Integer    ::= DecInteger | HexInteger
 
 # Incomplete string:
 @[test(code_03)]
-	'incomplete string
+	"incomplete string
 @[test(code_03)]
 @[test(code_03)]
 	Invalid %s token
@@ -78,4 +79,25 @@ Integer    ::= DecInteger | HexInteger
 @[test(code_03)]
 @[test(code_03)]
 	Invalid %s token
+@[test(code_03)]
+
+
+
+
+# Test tail call optimization:
+@[test(code_03)]
+routine TestTailCall( n = 0 )
+{
+	if( n == 0 ) std.error( "test" )
+	TestTailCall( n - 1 )
+}
+TestTailCall( 5 )
+@[test(code_03)]
+# If broken, it will print multiple "Called by:  TestTailCall()"
+@[test(code_03)]
+{{Exception}} [^%n]* %n
+.*
+{{Raised by:}} [^%n]* %n
+{{Called by:  TestTailCall()}} [^%n]* %s*
+{{Called by:  __main__()}} [^%n]* %s*
 @[test(code_03)]

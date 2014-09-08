@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,15 +14,16 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include"stdlib.h"
@@ -32,7 +33,7 @@
 
 #include"daoConst.h"
 #include"daoMap.h"
-#include"daoArray.h"
+#include"daoList.h"
 #include"daoString.h"
 #include"daoNumtype.h"
 #include"daoValue.h"
@@ -114,7 +115,7 @@ DMap* DHash_New( short kt, short vt )
 	return self;
 }
 
-unsigned int MurmurHash2 ( const void * key, int len, unsigned int seed );
+unsigned int MurmurHash3( const void * key, int len, unsigned int seed );
 
 static int DaoValue_Hash( DaoValue *self, unsigned int buf[], int id, int max, unsigned int seed )
 {
@@ -124,50 +125,38 @@ static int DaoValue_Hash( DaoValue *self, unsigned int buf[], int id, int max, u
 	unsigned int hash = 0;
 	switch( self->type ){
 	case DAO_INTEGER :
-		data = & self->xInteger.value;  len = sizeof(daoint);  break;
-	case DAO_FLOAT   :
-		data = & self->xFloat.value;  len = sizeof(float);  break;
-	case DAO_DOUBLE  :
-		data = & self->xDouble.value;  len = sizeof(double);  break;
+		data = & self->xInteger.value;  len = sizeof(dao_integer);  break;
+	case DAO_FLOAT  :
+		data = & self->xFloat.value;  len = sizeof(dao_float);  break;
 	case DAO_COMPLEX :
-		data = & self->xComplex.value;  len = sizeof(complex16);  break;
-	case DAO_LONG :
-		data = self->xLong.value->data;
-		len = self->xLong.value->size*sizeof(short);
-		break;
+		data = & self->xComplex.value;  len = sizeof(dao_complex);  break;
 	case DAO_ENUM  :
-		data = self->xEnum.etype->name->mbs; /* XXX */
+		data = self->xEnum.etype->name->chars;
 		len = self->xEnum.etype->name->size;
 		break;
 	case DAO_STRING  :
-		if( self->xString.data->mbs ){
-			data = self->xString.data->mbs;
-			len = self->xString.data->size;
-		}else{
-			data = self->xString.data->wcs;
-			len = self->xString.data->size * sizeof(wchar_t);
-		}
+		data = self->xString.value->chars;
+		len = self->xString.value->size;
 		break;
 	case DAO_ARRAY :
 		data = self->xArray.data.p;
 		len = self->xArray.size;
 		switch( self->xArray.etype ){
-		case DAO_INTEGER : len *= sizeof(int); break;
-		case DAO_FLOAT   : len *= sizeof(float); break;
-		case DAO_DOUBLE  : len *= sizeof(double); break;
-		case DAO_COMPLEX : len *= sizeof(complex16); break;
+		case DAO_INTEGER : len *= sizeof(dao_integer); break;
+		case DAO_FLOAT   : len *= sizeof(dao_float); break;
+		case DAO_COMPLEX : len *= sizeof(dao_complex); break;
 		default : break;
 		}
 		break;
 	case DAO_TUPLE :
 		for(i=0; i<self->xTuple.size; i++){
-			id = DaoValue_Hash( self->xTuple.items[i], buf, id, max, seed );
+			id = DaoValue_Hash( self->xTuple.values[i], buf, id, max, seed );
 			if( id >= max ) break;
 		}
 		break;
 	default : data = & self; len = sizeof(DaoValue*); break;
 	}
-	if( data ) hash = MurmurHash2( data, len, seed );
+	if( data ) hash = MurmurHash3( data, len, seed );
 	if( id == id2 && id < max ){
 		buf[id] = hash;
 		id += 1;
@@ -179,7 +168,7 @@ static int DHash_HashIndex( DMap *self, void *key )
 {
 #define HASH_MAX  32
 	DString *s;
-	DArray *array;
+	DList *array;
 	unsigned int buf[HASH_MAX];
 	unsigned int T = self->tsize;
 	unsigned id = 0;
@@ -187,42 +176,41 @@ static int DHash_HashIndex( DMap *self, void *key )
 	int m;
 
 	switch( self->keytype ){
-	case D_STRING :
+	case DAO_DATA_COMPLEX :
+		id = MurmurHash3( key, 2*sizeof(double), self->hashing ) % T;
+		break;
+	case DAO_DATA_STRING :
 		s = (DString*)key;
 		m = s->size;
-		data = NULL;
-		if( s->mbs ){
-			data = s->mbs;
-		}else{
-			data = s->wcs;
-			m *= sizeof(wchar_t);
-		}
-		id = MurmurHash2( data, m, self->hashing ) % T;
+		data = s->chars;
+		id = MurmurHash3( data, m, self->hashing ) % T;
 		break;
-	case D_VALUE :
+	case DAO_DATA_VALUE :
+	case DAO_DATA_VALUE2 :
+	case DAO_DATA_VALUE3 :
 		m = DaoValue_Hash( (DaoValue*) key, buf, 0, HASH_MAX, self->hashing );
 		if( m ==1 ){
 			id = buf[0] % T;
 		}else{
-			id = MurmurHash2( buf, m*sizeof(unsigned int), self->hashing ) % T;
+			id = MurmurHash3( buf, m*sizeof(unsigned int), self->hashing ) % T;
 		}
 		break;
-	case D_ARRAY :
-		array = (DArray*)key;
+	case DAO_DATA_LIST :
+		array = (DList*)key;
 		m = array->size * sizeof(void*);
-		id = MurmurHash2( array->items.pVoid, m, self->hashing ) % T;
+		id = MurmurHash3( array->items.pVoid, m, self->hashing ) % T;
 		break;
-	case D_VOID2 :
-		id = MurmurHash2( key, 2*sizeof(void*), self->hashing ) % T;
+	case DAO_DATA_VOID2 :
+		id = MurmurHash3( key, 2*sizeof(void*), self->hashing ) % T;
 		break;
-	case D_VMCODE :
-		id = MurmurHash2( key, 4*sizeof(unsigned short), self->hashing ) % T;
+	case DAO_DATA_VMCODE :
+		id = MurmurHash3( key, 4*sizeof(unsigned short), self->hashing ) % T;
 		break;
-	case D_VMCODE2 :
-		id = MurmurHash2( key, 3*sizeof(unsigned short), self->hashing ) % T;
+	case DAO_DATA_VMCODE2 :
+		id = MurmurHash3( key, 3*sizeof(unsigned short), self->hashing ) % T;
 		break;
 	default :
-		id = MurmurHash2( & key, sizeof(void*), self->hashing ) % T;
+		id = MurmurHash3( & key, sizeof(void*), self->hashing ) % T;
 		break;
 	}
 	return (int)id;
@@ -248,13 +236,19 @@ static void DMap_InsertTree( DMap *self, DNode *node )
 	if( left ) DMap_InsertTree( self, left );
 	if( right ) DMap_InsertTree( self, right );
 }
+static int DMap_Lockable( DMap *self )
+{
+	int lockable = self->keytype >= DAO_DATA_VALUE && self->keytype <= DAO_DATA_VALUE3;
+	lockable |= self->valtype >= DAO_DATA_VALUE && self->valtype <= DAO_DATA_VALUE3;
+	return lockable;
+}
 static void DHash_ResetTable( DMap *self )
 {
 	DNode **nodes = self->table;
 	int i, locked, tsize = self->tsize;
 
 	if( self->hashing ==0 ) return;
-	locked = self->keytype == D_VALUE || self->valtype == D_VALUE ? DaoGC_LockMap( self ) : 0;
+	locked = DMap_Lockable( self ) ? DaoGC_LockMap( self ) : 0;
 	self->tsize = 2 * self->size + 1;
 	self->table = (DNode**)dao_calloc( self->tsize, sizeof(DNode*) );
 	self->size = 0;
@@ -312,25 +306,38 @@ static void DMap_SwapNode( DMap *self, DNode *node, DNode *extreme )
 	node->key.pVoid = key;
 	node->value.pVoid = value;
 }
+static dao_complex* dao_complex_new( dao_complex *other )
+{
+	dao_complex *res = (dao_complex*) dao_malloc( sizeof(dao_complex) );
+	res->real = other->real;
+	res->imag = other->imag;
+	return res;
+}
 static void DMap_CopyItem( void **dest, void *item, short type )
 {
 	int n = 2*sizeof(void*);
 	if( *dest == NULL ){
 		switch( type ){
-		case D_STRING : *dest = DString_Copy( (DString*) item ); break;
-		case D_ARRAY  : *dest = DArray_Copy( (DArray*) item ); break;
-		case D_MAP    : *dest = DMap_Copy( (DMap*) item ); break;
-		case D_VALUE  : DaoValue_Copy( (DaoValue*)item, (DaoValue**) dest ); break;
-		case D_VOID2  : *dest = dao_malloc(n); memcpy(*dest, item, n); break;
+		case DAO_DATA_COMPLEX : *dest =  dao_complex_new( (dao_complex*) item ); break;
+		case DAO_DATA_STRING : *dest = DString_Copy( (DString*) item ); break;
+		case DAO_DATA_LIST   : *dest = DList_Copy( (DList*) item ); break;
+		case DAO_DATA_MAP    : *dest = DMap_Copy( (DMap*) item ); break;
+		case DAO_DATA_VALUE  :
+		case DAO_DATA_VALUE2 :
+		case DAO_DATA_VALUE3 : DaoValue_Copy( (DaoValue*)item, (DaoValue**) dest ); break;
+		case DAO_DATA_VOID2  : *dest = dao_malloc(n); memcpy(*dest, item, n); break;
 		default : *dest = item; break;
 		}
 	}else{
 		switch( type ){
-		case D_STRING : DString_Assign( (DString*)(*dest), (DString*) item ); break;
-		case D_ARRAY  : DArray_Assign( (DArray*)(*dest), (DArray*) item ); break;
-		case D_MAP    : DMap_Assign( (DMap*)(*dest), (DMap*) item ); break;
-		case D_VALUE  : DaoValue_Copy( (DaoValue*) item, (DaoValue**) dest ); break;
-		case D_VOID2  : memcpy(*dest, item, n); break;
+		case DAO_DATA_COMPLEX : *(dao_complex*) (*dest) = *(dao_complex*) item; break;
+		case DAO_DATA_STRING : DString_Assign( (DString*)(*dest), (DString*) item ); break;
+		case DAO_DATA_LIST   : DList_Assign( (DList*)(*dest), (DList*) item ); break;
+		case DAO_DATA_MAP    : DMap_Assign( (DMap*)(*dest), (DMap*) item ); break;
+		case DAO_DATA_VALUE  :
+		case DAO_DATA_VALUE2 :
+		case DAO_DATA_VALUE3 : DaoValue_Copy( (DaoValue*) item, (DaoValue**) dest ); break;
+		case DAO_DATA_VOID2  : memcpy(*dest, item, n); break;
 		default : *dest = item; break;
 		}
 	}
@@ -338,19 +345,26 @@ static void DMap_CopyItem( void **dest, void *item, short type )
 static void DMap_DeleteItem( void *item, short type )
 {
 	switch( type ){
-	case D_STRING : DString_Delete( (DString*) item ); break;
-	case D_ARRAY  : DArray_Delete( (DArray*) item ); break;
-	case D_MAP    : DMap_Delete( (DMap*) item ); break;
-	case D_VALUE  : GC_DecRC( (DaoValue*) item ); break;
-	case D_VOID2  : dao_free( item ); break;
+	case DAO_DATA_COMPLEX : dao_free( item ); break;
+	case DAO_DATA_STRING : DString_Delete( (DString*) item ); break;
+	case DAO_DATA_LIST   : DList_Delete( (DList*) item ); break;
+	case DAO_DATA_MAP    : DMap_Delete( (DMap*) item ); break;
+	case DAO_DATA_VALUE  :
+	case DAO_DATA_VALUE2 :
+	case DAO_DATA_VALUE3 : GC_DecRC( (DaoValue*) item ); break;
+	case DAO_DATA_VOID2  : dao_free( item ); break;
 	default : break;
 	}
 }
 static void DMap_BufferNode( DMap *self, DNode *node )
 {
 	node->parent = node->left = node->right = NULL;
-	if( self->keytype == D_VALUE ) DaoValue_Clear( & node->key.pValue );
-	if( self->valtype == D_VALUE ) DaoValue_Clear( & node->value.pValue );
+	if( self->keytype >= DAO_DATA_VALUE && self->keytype <= DAO_DATA_VALUE3 ){
+		DaoValue_Clear( & node->key.pValue );
+	}
+	if( self->valtype >= DAO_DATA_VALUE && self->valtype <= DAO_DATA_VALUE3 ){
+		DaoValue_Clear( & node->value.pValue );
+	}
 	if( self->list == NULL ){
 		self->list = node;
 		return;
@@ -381,7 +395,7 @@ static void DMap_DeleteTree( DMap *self, DNode *node )
 void DMap_Clear( DMap *self )
 {
 	daoint i;
-	int locked = self->keytype == D_VALUE || self->valtype == D_VALUE ? DaoGC_LockMap( self ) : 0;
+	int locked = DMap_Lockable( self ) ? DaoGC_LockMap( self ) : 0;
 	if( self->hashing ){
 		for(i=0; i<self->tsize; i++) DMap_DeleteTree( self, self->table[i] );
 		if( self->table ) dao_free( self->table );
@@ -397,7 +411,7 @@ void DMap_Clear( DMap *self )
 void DMap_Reset( DMap *self )
 {
 	daoint i;
-	int locked = self->keytype == D_VALUE || self->valtype == D_VALUE ? DaoGC_LockMap( self ) : 0;
+	int locked = DMap_Lockable( self ) ? DaoGC_LockMap( self ) : 0;
 	if( self->hashing ){
 		for(i=0; i<self->tsize; i++) DMap_BufferTree( self, self->table[i] );
 		memset( self->table, 0, self->tsize*sizeof(DNode*) );
@@ -615,18 +629,18 @@ void DMap_EraseNode( DMap *self, DNode *node )
 		int hash = node->hash;
 		self->root = self->table[ hash ];
 		if( self->root == NULL ) return;
-		locked = self->keytype == D_VALUE || self->valtype == D_VALUE ? DaoGC_LockMap( self ) : 0;
+		locked = DMap_Lockable( self ) ? DaoGC_LockMap( self ) : 0;
 		DMap_EraseChild( self, node );
 		self->table[ hash ] = self->root;
 		DaoGC_UnlockMap( self, locked );
 		if( self->size < 0.25*self->tsize ) DHash_ResetTable( self );
 	}else{
-		locked = self->keytype == D_VALUE || self->valtype == D_VALUE ? DaoGC_LockMap( self ) : 0;
+		locked = DMap_Lockable( self ) ? DaoGC_LockMap( self ) : 0;
 		DMap_EraseChild( self, node );
 		DaoGC_UnlockMap( self, locked );
 	}
 }
-static daoint DArray_Compare( DArray *k1, DArray *k2 )
+static daoint DList_Compare( DList *k1, DList *k2 )
 {
 	daoint i = 0, n = k1->size;
 	daoint *v1 = k1->items.pInt;
@@ -654,43 +668,72 @@ static daoint DaoVmCode_Compare2( DaoVmCode *k1, DaoVmCode *k2 )
 	if( k1->a != k2->a ) return k1->a - k2->a;
 	return k1->b - k2->b;
 }
+
+extern int DaoArray_Compare( DaoArray *x, DaoArray *y );
+extern int DaoTuple_Compare( DaoTuple *lt, DaoTuple *rt );
+extern int DaoList_Compare( DaoList *list1, DaoList *list2 );
+
+static int DaoValue_Compare2( DaoValue *left, DaoValue *right )
+{
+	if( left == right ) return 0;
+	if( left == NULL || right == NULL ) return left < right ? -100 : 100;
+	if( left->type != right->type ) return left->type < right->type ? -100 : 100;
+	if( left->type == DAO_TUPLE && left->xTuple.ctype == right->xTuple.ctype ){
+		return DaoTuple_Compare( (DaoTuple*) left, (DaoTuple*) right );
+#ifdef DAO_WITH_NUMARRAY
+	}else if( left->type == DAO_ARRAY && left->xArray.etype == right->xArray.etype ){
+		return DaoArray_Compare( (DaoArray*) left, (DaoArray*) right );
+#endif
+	}else if( left->type == DAO_LIST && left->xList.ctype == right->xList.ctype ){
+		return DaoList_Compare( (DaoList*) left, (DaoList*) right );
+	}
+	if( left->type <= DAO_STRING ) return DaoValue_Compare( left, right );
+	return left < right ? -100 : 100;
+}
+static int DaoValue_Compare3( DaoValue *left, DaoValue *right )
+{
+	if( left == right ) return 0;
+	if( left == NULL || right == NULL ) return left < right ? -100 : 100;
+	if( left->type != right->type ) return left->type < right->type ? -100 : 100;
+	if( left->type <= DAO_STRING ) return DaoValue_Compare( left, right );
+	return left < right ? -100 : 100;
+}
+static int dao_complex_compare( dao_complex *left, dao_complex *right )
+{
+	if( left->real != right->real ) return left->real < right->real ? -1 : 1;
+	if( left->imag != right->imag ) return left->imag < right->imag ? -1 : 1;
+	return 0;
+}
 static daoint DMap_CompareKeys( DMap *self, void *k1, void *k2 )
 {
 	daoint cmp = 0;
 	switch( self->keytype ){
-	case D_STRING : cmp = DString_Compare( (DString*) k1, (DString*) k2 );        break;
-	case D_VALUE  : cmp = DaoValue_Compare( (DaoValue*) k1, (DaoValue*) k2 );     break;
-	case D_ARRAY  : cmp = DArray_Compare( (DArray*) k1, (DArray*) k2 );           break;
-	case D_VOID2  : cmp = DVoid2_Compare( (void**) k1, (void**) k2 );             break;
-	case D_VMCODE : cmp = DaoVmCode_Compare( (DaoVmCode*) k1, (DaoVmCode*) k2 );  break;
-	case D_VMCODE2: cmp = DaoVmCode_Compare2( (DaoVmCode*) k1, (DaoVmCode*) k2 ); break;
+	case DAO_DATA_COMPLEX : cmp = dao_complex_compare( (dao_complex*) k1, (dao_complex*) k2 ); break;
+	case DAO_DATA_STRING : cmp = DString_Compare( (DString*) k1, (DString*) k2 ); break;
+	case DAO_DATA_VALUE  : cmp = DaoValue_Compare( (DaoValue*) k1, (DaoValue*) k2 );  break;
+	case DAO_DATA_VALUE2 : cmp = DaoValue_Compare2( (DaoValue*) k1, (DaoValue*) k2 ); break;
+	case DAO_DATA_VALUE3 : cmp = DaoValue_Compare3( (DaoValue*) k1, (DaoValue*) k2 ); break;
+	case DAO_DATA_LIST  : cmp = DList_Compare( (DList*) k1, (DList*) k2 );        break;
+	case DAO_DATA_VOID2  : cmp = DVoid2_Compare( (void**) k1, (void**) k2 );          break;
+	case DAO_DATA_VMCODE : cmp = DaoVmCode_Compare( (DaoVmCode*) k1, (DaoVmCode*) k2 );  break;
+	case DAO_DATA_VMCODE2: cmp = DaoVmCode_Compare2( (DaoVmCode*) k1, (DaoVmCode*) k2 ); break;
 	default : cmp = (daoint)k1 - (daoint)k2; break;
 	}
-	/*
-	// Note:
-	// A MBS string and WCS string of the same content may be hashed into
-	// different values, so there is no guarantee that they will be considered
-	// equivalent when they are used as keys in hash maps.
-	//
-	// Because of this, it should always better to consider MBS keys are different
-	// from WCS keys in HASH maps, to avoid the pitfalls that some keys are considered
-	// equivalent between MBS and WCS, while others are not.
-	*/
 	if( self->hashing && cmp == 0 ){
 		DString *s1 = NULL;
 		DString *s2 = NULL;
-		if( self->keytype == D_STRING ){
+		if( self->keytype == DAO_DATA_STRING ){
 			s1 = (DString*) k1;
 			s2 = (DString*) k2;
-		}else if( self->keytype == D_VALUE ){
+		}else if( self->keytype >= DAO_DATA_VALUE && self->keytype <= DAO_DATA_VALUE3 ){
 			DaoValue *skv1 = (DaoValue*) k1;
 			DaoValue *skv2 = (DaoValue*) k2;
 			if( skv1->type == DAO_STRING ){
-				s1 = skv1->xString.data;
-				s2 = skv2->xString.data;
+				s1 = skv1->xString.value;
+				s2 = skv2->xString.value;
 			}
 		}
-		if( s1 != NULL && (s1->mbs == NULL) != (s2->mbs == NULL) ) cmp = s1->mbs ? 1 : -1;
+		if( s1 != NULL && (s1->chars == NULL) != (s2->chars == NULL) ) cmp = s1->chars ? 1 : -1;
 	}
 	return cmp;
 }
@@ -786,7 +829,7 @@ DNode* DMap_Insert( DMap *self, void *key, void *value )
 	if( p == node ){ /* key not exist: */
 		DMap_CopyItem( & node->key.pVoid, key, self->keytype );
 		DMap_CopyItem( & node->value.pVoid, value, self->valtype );
-		locked = self->keytype == D_VALUE || self->valtype == D_VALUE ? DaoGC_LockMap( self ) : 0;
+		locked = DMap_Lockable( self ) ? DaoGC_LockMap( self ) : 0;
 		DMap_InsertNode( self, node );
 		DaoGC_UnlockMap( self, locked );
 		if( self->hashing ){
@@ -794,7 +837,7 @@ DNode* DMap_Insert( DMap *self, void *key, void *value )
 			if( self->size >= self->tsize ) DHash_ResetTable( self );
 		}
 	}else{
-		if( self->valtype != D_VALUE ){
+		if( self->valtype != DAO_DATA_VALUE ){
 			DMap_DeleteItem( p->value.pVoid, self->valtype );
 			p->value.pVoid = NULL;
 		}
@@ -846,64 +889,53 @@ DNode* DMap_Next( DMap *self, DNode *node )
 
 
 /*
-   PUBLIC DOMAIN CODES
-http://sites.google.com/site/murmurhash/
-http://www.burtleburtle.net/bob/hash/doobs.html
- */
+//  MurmurHash3, by Austin Appleby
+//  PUBLIC DOMAIN CODES
+//  http://sites.google.com/site/murmurhash/
+//  http://code.google.com/p/smhasher/
+//  http://www.burtleburtle.net/bob/hash/doobs.html
+*/
 
-/* -----------------------------------------------------------------------------
-   MurmurHash2, by Austin Appleby
+#define ROTL32(x,r) ((x << r) | (x >> (32 - r)))
 
-   Note - This code makes a few assumptions about how your machine behaves -
-   1. We can read a 4-byte value from any address without crashing
-   2. sizeof(int) == 4
-
-   And it has a few limitations -
-   1. It will not work incrementally.
-   2. It will not produce the same results on little-endian and big-endian
-   machines.
- */
-unsigned int MurmurHash2 ( const void * key, int len, unsigned int seed )
+unsigned int MurmurHash3( const void *key, int len, unsigned int seed )
 {
-	/* 'm' and 'r' are mixing constants generated offline.
-	   They're not really 'magic', they just happen to work well. */
-	const unsigned int m = 0x5bd1e995;
-	const int r = 24;
+	const int nblocks = len / 4;
+	const uchar_t *data = (const uchar_t*)key;
+	const uchar_t *tail = (const uchar_t*)(data + nblocks*4);
+	const uint_t *blocks = (const uint_t*)(data + nblocks*4);
+	const uint_t c1 = 0xcc9e2d51;
+	const uint_t c2 = 0x1b873593;
+	uint_t h1 = seed;
+	uint_t k1 = 0;
+	int i;
 
-	/* Initialize the hash to a 'random' value */
-	unsigned int h = seed ^ len;
+	/* body: */
+	for(i = -nblocks; i; i++){
+		k1 = blocks[i];
 
-	/* Mix 4 bytes at a time into the hash */
-	const unsigned char * data = (const unsigned char *)key;
+		k1 *= c1;
+		k1 = ROTL32(k1,15);
+		k1 *= c2;
 
-	while(len >= 4) {
-		unsigned int k = *(unsigned int *)data;
-
-		k *= m;
-		k ^= k >> r;
-		k *= m;
-
-		h *= m;
-		h ^= k;
-
-		data += 4;
-		len -= 4;
+		h1 ^= k1;
+		h1 = ROTL32(h1,13); 
+		h1 = h1*5+0xe6546b64;
 	}
 
-	/* Handle the last few bytes of the input array */
-	switch(len)
-	{
-	case 3: h ^= data[2] << 16;
-	case 2: h ^= data[1] << 8;
-	case 1: h ^= data[0];
-			h *= m;
-	};
+	/* tail: */
+	switch(len & 3){
+	case 3: k1 ^= tail[2] << 16;
+	case 2: k1 ^= tail[1] << 8;
+	case 1: k1 ^= tail[0]; k1 *= c1; k1 = ROTL32(k1,15); k1 *= c2; h1 ^= k1;
+	}
 
-	/* Do a few final mixes of the hash to ensure the last few
-	   bytes are well-incorporated. */
-	h ^= h >> 13;
-	h *= m;
-	h ^= h >> 15;
-
-	return h;
+	/* finalization: */
+	h1 ^= len;
+	h1 ^= h1 >> 16;
+	h1 *= 0x85ebca6b;
+	h1 ^= h1 >> 13;
+	h1 *= 0xc2b2ae35;
+	h1 ^= h1 >> 16;
+	return h1;
 }

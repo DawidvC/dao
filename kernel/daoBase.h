@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,25 +14,28 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #ifndef DAO_BASE_H
 #define DAO_BASE_H
 
+#define DAO_KERNEL
+
 #include"dao.h"
 #include"daoPlatforms.h"
 
 
-#define IntToPointer( x ) ((void*)(size_t)x)
+#define IntToPointer( x ) ((void*)(size_t)(x))
 
 
 typedef struct DRoutines     DRoutines;
@@ -47,10 +50,9 @@ typedef struct DaoInode      DaoInode;
 typedef struct DaoVmCode     DaoVmCode;
 typedef struct DaoVmCodeX    DaoVmCodeX;
 
-typedef struct DVector   DVector;
+typedef struct DArray   DArray;
 
 typedef struct DaoFuture     DaoFuture;
-typedef struct DaoException  DaoException;
 typedef struct DaoNameValue  DaoNameValue;
 typedef struct DaoConstant   DaoConstant;
 typedef struct DaoVariable   DaoVariable;
@@ -58,13 +60,6 @@ typedef struct DaoVariable   DaoVariable;
 typedef struct DaoCnode      DaoCnode;
 typedef struct DaoOptimizer  DaoOptimizer;
 
-typedef struct DaoMacro      DaoMacro;
-typedef struct DaoParser     DaoParser;
-
-typedef struct DaoStackFrame    DaoStackFrame;
-
-#define STRCMP( x, y ) strcmp( (x)->mbs, y )
-#define TOKCMP( x, y ) strcmp( (x)->string.mbs, y )
 
 /*
 // Bit structure of the lookup index:
@@ -84,24 +79,15 @@ typedef struct DaoStackFrame    DaoStackFrame;
 
 #define LOOKUP_ISCST( one ) (LOOKUP_ST(one)&1)
 
-DAO_DLL void* dao_malloc( size_t size );
-DAO_DLL void* dao_calloc( size_t nmemb, size_t size );
-DAO_DLL void* dao_realloc( void *ptr, size_t size );
-DAO_DLL void  dao_free( void *p );
 
 typedef struct DaoConfig  DaoConfig;
 struct DaoConfig
 {
 	short cpu;  /* number of CPU */
 	short jit;  /* enable JIT compiling */
-	short safe; /* enable safe running mode */
-	short typedcode; /* enable typed VM codes */
 	short optimize;  /* enable optimization */
 	short iscgi;     /* is CGI script */
 	short tabspace;  /* number of spaces counted for a tab */
-	short chindent;  /* check indentation */
-	short mbs; /* MBS only */
-	short wcs; /* WCS only */
 };
 
 extern DaoConfig daoConfig;

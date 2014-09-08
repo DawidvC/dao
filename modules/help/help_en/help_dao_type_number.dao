@@ -16,7 +16,8 @@ Integer Type
 @[text]
 
 @[green]int@[green] is the built-in primitive data type for integers.
-By default, its size is the same as the pointer size on the platform.
+By default, its size is the same as the pointer size on the platform,
+namely 4 bytes on 32 bits machines and 8 bytes on 64 bits machine.
 
 
 @[subsection]Definition@[subsection]
@@ -25,7 +26,7 @@ DecDigit ::= '0' ... '9'
 HexDigit ::= DecDigit | 'a' ... 'f' | 'A' ... 'F'
 
 DecInteger ::= DecDigit +
-HexInteger ::= ('0x' | '0X') DecDigit +
+HexInteger ::= ('0x' | '0X') HexDigit +
 Integer    ::= DecInteger | HexInteger
 @[code(syntax)]
 
@@ -33,7 +34,7 @@ Integer    ::= DecInteger | HexInteger
 @[code]
 A = 123
 B = 0x123a
-C :int = 789
+C: int = 789
 @[code]
 @[text]
 
@@ -48,12 +49,12 @@ dao.type.float
 @[name]
 
 @[title]
-Single Precision Floating Point Number Type
+Float Type
 @[title]
 
 @[text]
 
-@[green]float@[green] is the built-in primitive data type for single precision
+@[green]float@[green] is the built-in primitive data type for double precision
 floating point numbers.
 
 
@@ -61,13 +62,11 @@ floating point numbers.
 @[code(syntax)]
 DotDec ::= DecDigit * '.' DecDigit +
 DecDot ::= DecDigit + '.' DecDigit *
+DecNumber ::= DotDec | DecDot
+DecNumber ::= DecInteger | DecNumber
+SciNumber ::= DecNumber ( 'e' | 'E' ) [ '+' | '-' ] DecInteger
 
-DecSinglePrecision ::= DotDec | DecDot
-DecNumber ::= DecInteger | DecSinglePrecision
-
-SciSinglePrecision ::= DecNumber 'e' [ '+' | '-' ] DecInteger
-
-Float ::= DecSinglePrecision | SciSinglePrecision
+Float  ::= DecNumber | SciNumber
 @[code(syntax)]
 where @[green]DecInteger@[green] is defined @[node]dao.type.int@[node].
 
@@ -78,48 +77,10 @@ A = .12
 B = 12.
 C = 12.5
 D = 2e-3
-@[code]
-@[text]
-
-
-################################################################################
-################################################################################
-#### Double Precision Floating Point Number Type
-################################################################################
-################################################################################
-@[name]
-dao.type.double
-@[name]
-
-@[title]
-Double Precision Floating Point Number Type
-@[title]
-
-@[text]
-
-@[green]double@[green] is the built-in primitive data type for double precision
-floating point numbers.
-
-
-@[subsection]Definition@[subsection]
-@[code(syntax)]
-SciDoublePrecision ::= DecNumber 'E' [ '+' | '-' ] DecInteger
-Double ::= (DecInteger | DecSinglePrecision) 'D' | SciDoublePrecision
-@[code(syntax)]
-where @[green]DecInteger@[green] is defined @[node]dao.type.int@[node],
-and @[green]DecNumber@[green] and @[green]DecSinglePrecision@[green]
-are defined in @[node]dao.type.float@[node].
-
-
-@[subsection]Examples@[subsection]
-@[code]
-A = .12D
-B = 12.D
-C = 12.5D
-D = 123D
 E = 2E-3
 @[code]
 @[text]
+
 
 
 ################################################################################
@@ -132,7 +93,7 @@ dao.type.complex
 @[name]
 
 @[title]
-Complex Number Type
+Complex Type
 @[title]
 
 @[text]
@@ -144,7 +105,7 @@ precision floating point numbers.
 
 @[subsection]Definition@[subsection]
 @[code(syntax)]
-Complex ::= Float '$'
+Complex ::= ( DecInteger | DecNumber | SciNumber ) 'C'
 @[code(syntax)]
 
 @[green]complex@[green] has two fields @[green]real@[green] and @[green]imag@[green],
@@ -153,54 +114,11 @@ which can be used to set and get the real and imaginary part of the complex.
 
 @[subsection]Examples@[subsection]
 @[code]
-A = $
-B = 123$
-C = 12.3$
+A = 1C
+B = 123C
+C = 12.3C
 R = C.real;
 I = C.imag;
 @[code]
 @[text]
 
-
-################################################################################
-################################################################################
-#### Arbitrary Precision Integer Type
-################################################################################
-################################################################################
-@[name]
-dao.type.long
-@[name]
-
-@[title]
-Arbitrary Precision Integer Type
-@[title]
-
-@[text]
-
-@[green]long@[green] is the built-in type for arbitrary precision integers
-(or big integers).
-
-
-@[subsection]Definition@[subsection]
-@[code(syntax)]
-LongBase ::= '2' ... '16'
-Long ::= Integer 'L' [ LongBase ]
-@[code(syntax)]
-By default the long integer is 10 based. If @[green]LongBase@[green]
-is explicitly specified, the @[green]Integer@[green] part
-will be interpreted as @[green]LongBase@[green] base integer, and invalid
-digits for the base will be detected as error.
-But if @[green]Integer@[green] is in hexadecimal format, it will still be
-interpreted as hexadecimal number, regardless what is specified as
-@[green]LongBase@[green].
-
-
-
-@[subsection]Examples@[subsection]
-@[code]
-A = 123L
-B = 0xa2fe3L
-C = 100111001L2
-D = 0xa2fe3L8
-@[code]
-@[text]

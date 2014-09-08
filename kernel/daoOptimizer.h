@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,15 +14,16 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #ifndef __DAO_OPTIMIZER_H__
@@ -30,9 +31,6 @@
 
 #include"daoBase.h"
 
-#define GET_BIT( bits, id ) (bits[id/8] & (1<<(id%8)))
-#define SET_BIT0( bits, id ) bits[id/8] &= ~(1<<(id%8))
-#define SET_BIT1( bits, id ) bits[id/8] |= (1<<(id%8))
 
 enum DaoCnodeOperandType
 {
@@ -51,24 +49,25 @@ struct DaoCnode
 	uchar_t   type;       /* use type of operands; */
 	uchar_t   reachable;  /* reachable status; */
 	ushort_t  index;      /* index of the node; */
-	ushort_t  first;      /* the only (for SINGLE) or the first (for PAIR/RANGE) used variable; */
-	ushort_t  second;     /* the second (for PAIR) or the last (for RANGE) used variable; */
-	ushort_t  third;      /* the third (for TRIPLE) used variable; */
+	ushort_t  first;      /* the only (SINGLE) or the first (PAIR/RANGE) used variable; */
+	ushort_t  second;     /* the second (PAIR) or the one-past-last (RANGE) used variable; */
+	ushort_t  third;      /* the third (TRIPLE) used variable; */
 	ushort_t  lvalue;     /* variable defined by the instruction; 0xffff for none; */
 	ushort_t  lvalue2;    /* C operand for SETF, SETI, SETDI, SETMI instructions; */
 	ushort_t  exprid;     /* expression id; 0xffff for none; */
 
-	DArray   *ins;   /* in nodes in the flow graph; */
-	DArray   *outs;  /* out nodes in the flow graph; */
-	DArray   *kills; /* expressions that are killed by this one; */
+	DList   *ins;   /* in nodes in the flow graph; */
+	DList   *outs;  /* out nodes in the flow graph; */
+	DList   *kills; /* expressions that are killed by this one; */
 
-	DArray   *defs; /* definitions for this use node; */
-	DArray   *uses; /* uses for this definition node; */
+	DList   *defs; /* definitions for this use node; */
+	DList   *uses; /* uses for this definition node; */
 
-	DMap     *set;  /* set for the analysis; */
+	DList   *list; /* sorted list for the analysis results; */
 };
 
 DAO_DLL void DaoCnode_InitOperands( DaoCnode *self, DaoVmCode *code );
+DAO_DLL int  DaoCnode_FindResult( DaoCnode *self, void *key );
 
 typedef void (*AnalysisInit)( DaoOptimizer*, DaoCnode* );
 typedef int (*AnalysisUpdate)( DaoOptimizer*, DaoCnode*, DaoCnode* );
@@ -82,20 +81,21 @@ struct DaoOptimizer
 	AnalysisInit    init;
 	AnalysisUpdate  update;
 
-	DArray  *nodes;  /* all nodes (labels); */
-	DArray  *enodes; /* expression nodes (labels); */
-	DArray  *uses;   /* nodes that use a variable; */
-	DArray  *refers; /* variables: 0, non-reference; 1, reference; */
+	DList  *nodes;  /* all nodes (labels); */
+	DList  *enodes; /* expression nodes (labels); */
+	DList  *uses;   /* nodes that use a variable; */
+	DList  *refers; /* variables: 0, non-reference; 1, reference; */
 
 	DMap    *exprs;   /* all expressions; */
 	DMap    *inits;   /* init nodes; */
 	DMap    *finals;  /* final nodes; */
 
 	DMap    *tmp;
-	DMap    *tmp2;
-	DArray  *array;
-	DArray  *nodeCache;
-	DArray  *arrayCache;
+	DList  *array;
+	DList  *array2;
+	DList  *array3;
+	DList  *nodeCache;
+	DList  *arrayCache;
 };
 
 DAO_DLL DaoOptimizer* DaoOptimizer_New();
@@ -120,13 +120,14 @@ struct DaoInode
 {
 	unsigned short  code;    /* opcode */
 	unsigned short  a, b, c; /* register ids for operands */
+	unsigned short  state;   /* state; */
 	unsigned short  level;   /* lexical level */
 	unsigned short  line;    /* line number in source file */
 	unsigned int    first;   /* index of the first token of the expression */
 	unsigned short  middle;  /* the middle token, relative to "first" */
 	unsigned short  last;    /* the last token, relative to "first" */
 
-	unsigned short  index;   /* index of the instruction */
+	unsigned int  index;   /* index of the instruction */
 
 	DaoInode *jumpTrue;
 	DaoInode *jumpFalse;
@@ -138,10 +139,10 @@ struct DaoInode
 
 DaoInode* DaoInode_New();
 
-void DaoInodes_Clear( DArray *inodes );
+void DaoInodes_Clear( DList *inodes );
 
-void DaoRoutine_CodesToInodes( DaoRoutine *self, DArray *inodes );
-void DaoRoutine_CodesFromInodes( DaoRoutine *self, DArray *inodes );
+void DaoRoutine_CodesToInodes( DaoRoutine *self, DList *inodes );
+void DaoRoutine_CodesFromInodes( DaoRoutine *self, DList *inodes );
 void DaoRoutine_SetupSimpleVars( DaoRoutine *self );
 
 
@@ -159,16 +160,18 @@ struct DaoInferencer
 	DaoRoutine  *routine;
 	DaoClass    *hostClass;
 
-	DArray      *inodes;
-	DArray      *consts;
-	DArray      *types;
+	DList      *inodes;
+	DList      *consts;
+	DList      *types;
+	DList      *types2;
 	DString     *inited;
 
-	DArray      *rettypes;
-	DArray      *typeMaps;
-	DArray      *errors;
-	DArray      *array;
-	DArray      *array2;
+	DList      *rettypes;
+	DList      *typeMaps;
+	DList      *errors;
+	DList      *array;
+	DList      *array2;
+	DList      *defers;
 
 	DMap        *defs;
 	DMap        *defs2;
@@ -182,7 +185,6 @@ struct DaoInferencer
 	int          annot_first;
 	int          annot_last;
 
-	DaoType     *typeLong;
 	DaoType     *typeEnum;
 	DaoType     *typeString;
 	DaoType     *basicTypes[DAO_ARRAY];
@@ -193,5 +195,9 @@ void DaoInferencer_Delete( DaoInferencer *self );
 void DaoInferencer_Init( DaoInferencer *self, DaoRoutine *routine, int silent );
 void DaoInferencer_Reset( DaoInferencer *self );
 int DaoInferencer_DoInference( DaoInferencer *self );
+
+#ifdef DAO_WITH_DECORATOR
+DaoRoutine* DaoRoutine_Decorate( DaoRoutine *self, DaoRoutine *decorator, DaoValue *p[], int n, int ip );
+#endif
 
 #endif

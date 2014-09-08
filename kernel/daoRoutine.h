@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,15 +14,16 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #ifndef DAO_ROUTINE_H
@@ -62,7 +63,7 @@ typedef struct DaoRoutineBody DaoRoutineBody;
 */
 struct DaoRoutine
 {
-	DAO_DATA_COMMON;
+	DAO_VALUE_COMMON;
 
 	ushort_t         attribs;
 	ushort_t         parCount; /* number of parameters that can be accepted; */
@@ -81,49 +82,52 @@ struct DaoRoutine
 	DRoutines       *overloads; /* overloaded routines; */
 };
 
-DaoRoutine* DaoRoutine_New( DaoNamespace *nspace, DaoType *host, int body );
-DaoRoutine* DaoRoutines_New( DaoNamespace *nspace, DaoType *host, DaoRoutine *init );
-DaoRoutine* DaoRoutine_Copy( DaoRoutine *self, int copy_const, int copy_body );
-void DaoRoutine_CopyFields( DaoRoutine *self, DaoRoutine *from, int copy_body, int copy_const );
-void DaoRoutine_Delete( DaoRoutine *self );
-int  DaoRoutine_AddConstant( DaoRoutine *self, DaoValue *value );
+DAO_DLL DaoRoutine* DaoRoutine_New( DaoNamespace *nspace, DaoType *host, int body );
+DAO_DLL DaoRoutine* DaoRoutines_New( DaoNamespace *nspace, DaoType *host, DaoRoutine *init );
+DAO_DLL DaoRoutine* DaoRoutine_Copy( DaoRoutine *self, int copy_const, int copy_body, int copy_stat );
+DAO_DLL void DaoRoutine_CopyFields( DaoRoutine *self, DaoRoutine *from, int copy_body, int copy_const, int copy_stat );
+DAO_DLL void DaoRoutine_Delete( DaoRoutine *self );
+DAO_DLL int  DaoRoutine_AddConstant( DaoRoutine *self, DaoValue *value );
 
-int DaoRoutine_SetVmCodes( DaoRoutine *self, DArray *vmCodes );
-void DaoRoutine_SetSource( DaoRoutine *self, DArray *tokens, DaoNamespace *ns );
+DAO_DLL int DaoRoutine_SetVmCodes( DaoRoutine *self, DList *vmCodes );
+DAO_DLL void DaoRoutine_SetSource( DaoRoutine *self, DList *tokens, DaoNamespace *ns );
 
-void DaoRoutine_PrintCode( DaoRoutine *self, DaoStream *stream );
+DAO_DLL void DaoRoutine_FormatCode( DaoRoutine *self, int i, DaoVmCodeX vmc, DString *output );
+DAO_DLL void DaoRoutine_PrintCode( DaoRoutine *self, DaoStream *stream );
 
-int DaoRoutine_DoTypeInference( DaoRoutine *self, int silent );
+DAO_DLL void DaoRoutine_MapTypes( DaoRoutine *self, DMap *deftypes );
+DAO_DLL int DaoRoutine_Finalize( DaoRoutine *self, DaoType *host, DMap *deftypes );
+DAO_DLL int DaoRoutine_DoTypeInference( DaoRoutine *self, int silent );
 
 struct DaoRoutineBody
 {
-	DAO_DATA_COMMON;
+	DAO_VALUE_COMMON;
 
 	/* virtual machine codes: */
-	DVector *vmCodes;
+	DArray *vmCodes;
 
 	/* data type for local registers: */
-	DArray *regType;    /* DArray<DaoType*> */
-	DArray *svariables; /* DArray<DaoVariable*> */
+	DList *regType;   /* DList<DaoType*> */
+	DList *upValues;  /* DList<DaoVariable*> */
 
 	/* VM codes with annotations */
-	DArray *annotCodes; /* DArray<DaoVmCodeX*> */
+	DList *annotCodes; /* DList<DaoVmCodeX*> */
 
 	/* definition of local constants and variables: */
-	DArray *defLocals; /* DArray<DaoToken*> */
-	DArray *source; /* DArray<DaoToken*> */
+	DList *defLocals; /* DList<DaoToken*> */
+	DList *source; /* DList<DaoToken*> */
+	DList *decoTargets;
 
-	DArray *simpleVariables;
+	DList *simpleVariables;
+	DMap   *localVarType;  /* DMap<int,DaoType*> local variable types */
 
-	DMap *localVarType; /* DMap<int,DaoType*> local variable types */
+	ushort_t  regCount;
+	uchar_t   exeMode;
+	uchar_t   hasStatic;
+	ushort_t  codeStart;
+	ushort_t  codeEnd;
 
-	int mode;
-
-	ushort_t regCount;
-	ushort_t codeStart;
-	ushort_t codeEnd;
-
-	DMap *abstypes;
+	DMap   *aux;
 
 	DaoRoutine  *revised; /* to support edit & continue */
 
@@ -131,7 +135,7 @@ struct DaoRoutineBody
 };
 
 DaoRoutineBody* DaoRoutineBody_New();
-DaoRoutineBody* DaoRoutineBody_Copy( DaoRoutineBody *self );
+DaoRoutineBody* DaoRoutineBody_Copy( DaoRoutineBody *self, int copy_stat );
 void DaoRoutineBody_Delete( DaoRoutineBody *self );
 
 
@@ -166,9 +170,9 @@ struct DRoutines
 	unsigned int   attribs;
 	DParamNode    *tree;
 	DParamNode    *mtree;    /* for routines with self parameter */
-	DArray        *routines; /* list of overloaded routines on both trees */
-	DArray        *array;    /* list of all added routines (may not be on the trees) */
-	DArray        *array2;
+	DList        *routines; /* list of overloaded routines on both trees */
+	DList        *array;    /* list of all added routines (may not be on the trees) */
+	DList        *array2;
 };
 
 DRoutines* DRoutines_New();
@@ -176,12 +180,38 @@ void DRoutines_Delete( DRoutines *self );
 
 DaoRoutine* DRoutines_Add( DRoutines *self, DaoRoutine *routine );
 
-void DaoRoutines_Import( DaoRoutine *self, DRoutines *other );
+void DaoRoutines_Add( DaoRoutine *self, DaoRoutine *other );
 
 
-/* Resolve overloaded, virtual and specialized function: */
-DaoRoutine* DaoRoutine_ResolveX( DaoRoutine *self, DaoValue *obj, DaoValue *p[], int n, int code );
-DaoRoutine* DaoRoutine_ResolveByType( DaoRoutine *self, DaoType *st, DaoType *t[], int n, int code );
-void DaoRoutine_UpdateVtable( DaoRoutine *self, DaoRoutine *routine, DMap *vtable );
+/*
+// Resolve overloaded routines based on parameter values and/or types:
+// -- For overloaded routines, it checks and returns the best routine that is
+//    callable with the given parameter values or types. The best routines is
+//    the routine that produces the highest score based type matching of the
+//    parameters;
+// -- At compiling time, routines are resolved exclusively by parameter types.
+//    So only the parameter types need to be passed to this function;
+// -- At running time, routines can be resolved by both parameter values and types,
+//    Parameter types are needed to handle "invar" parameters, because the invar
+//    type information may not be stored in the values (since it is not thread safe
+//    to tag normal values for invar parameters);
+// -- When both parameter values and types are passed to this function, type
+//    matching is performed on the values, with additional checks on the types
+//    for information that is not available in the values;
+// -- Non-overloaded routine is returned immediately without checking whether
+//    it is callable with the given parameter values and types.
+//    In order to check the routine against the paramter values and types,
+//    use DaoRoutine_ResolveX() instead;
+// -- The "callmode" parameter is a bit combination of the virtual instruction
+//    values for calls (DVM_CALL or DVM_MCALL) and the second argument for the
+//    instruction: DaoVmCode::code|(DaoVmCode::b<<16).
+*/
+DAO_DLL DaoRoutine* DaoRoutine_Resolve( DaoRoutine *self, DaoValue *svalue, DaoType *stype, DaoValue *values[], DaoType *types[], int count, int callmode );
+
+/*
+// Resolve overloaded routines and check if the routine is callable with the given
+// parameter values.
+*/
+DAO_DLL DaoRoutine* DaoRoutine_ResolveX( DaoRoutine *self, DaoValue *svalue, DaoType *stype, DaoValue *values[], DaoType *types[], int count, int callmode );
 
 #endif

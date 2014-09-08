@@ -5,8 +5,9 @@ daovm = DaoMake::FindPackage( "Dao", $REQUIRED )
 
 if( daovm == none ) return
 
-project.UseSharedLibrary( daovm, "dao" )
+project.UseImportLibrary( daovm, "dao" )
 project.AddIncludePath( "." )
+project.SetTargetPath( "../../lib/dao/modules" )
 
 project_objs = project.AddObjects( { "dao_dataframe.c" }, { "dao_dataframe.h" } )
 project_dll  = project.AddSharedLibrary( "dao_dataframe", project_objs )
@@ -16,4 +17,7 @@ project_lib  = project.AddStaticLibrary( "dao_dataframe", project_objs )
 project.GenerateFinder( $TRUE );
 project.Install( daovm.GetPath( "MOD-PATH" ), project_dll );
 project.Install( daovm.GetPath( "MOD-PATH" ), project_lib );
-project.Install( daovm.GetPath( "ROOT-PATH" ) + "/shared/daomake/packages/", "FindDaoDataFrame.dao" );
+
+daovm_doc_path = daovm.GetPath( "DOC-PATH" );
+demos = { "example.dao" }
+project.Install( DaoMake::MakePath( daovm_doc_path, "./demo/modules/dataframe" ), demos )

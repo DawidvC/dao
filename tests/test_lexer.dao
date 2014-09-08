@@ -82,7 +82,7 @@ Float ::= DecSinglePrecision | SciSinglePrecision
 	123.
 @[test(code_03)]
 @[test(code_03)]
-	123
+	123.0
 @[test(code_03)]
 
 
@@ -90,7 +90,7 @@ Float ::= DecSinglePrecision | SciSinglePrecision
 	123e1
 @[test(code_03)]
 @[test(code_03)]
-	1230
+	1230.0
 @[test(code_03)]
 
 
@@ -98,7 +98,7 @@ Float ::= DecSinglePrecision | SciSinglePrecision
 	123e+1
 @[test(code_03)]
 @[test(code_03)]
-	1230
+	1230.0
 @[test(code_03)]
 
 
@@ -106,7 +106,7 @@ Float ::= DecSinglePrecision | SciSinglePrecision
 	12.3e+1
 @[test(code_03)]
 @[test(code_03)]
-	123
+	123.0
 @[test(code_03)]
 
 
@@ -119,7 +119,7 @@ Float ::= DecSinglePrecision | SciSinglePrecision
 
 
 @[test(code_03)]
-	io.writef( '%g', 123e-1 )
+	io.writef( "%g", 123e-1 )
 @[test(code_03)]
 @[test(code_03)]
 	12.3
@@ -185,7 +185,7 @@ Double ::= (DecInteger | DecSinglePrecision) 'D' | SciDoublePrecision
 	.5D
 @[test(code_03)]
 @[test(code_03)]
-	0.5D
+	Invalid %s token
 @[test(code_03)]
 
 
@@ -193,7 +193,7 @@ Double ::= (DecInteger | DecSinglePrecision) 'D' | SciDoublePrecision
 	123.D
 @[test(code_03)]
 @[test(code_03)]
-	123D
+	Invalid %s token
 @[test(code_03)]
 
 
@@ -201,7 +201,7 @@ Double ::= (DecInteger | DecSinglePrecision) 'D' | SciDoublePrecision
 	123E1
 @[test(code_03)]
 @[test(code_03)]
-	1230D
+	1230.0
 @[test(code_03)]
 
 
@@ -209,7 +209,7 @@ Double ::= (DecInteger | DecSinglePrecision) 'D' | SciDoublePrecision
 	123E+1
 @[test(code_03)]
 @[test(code_03)]
-	1230D
+	1230.0
 @[test(code_03)]
 
 
@@ -217,7 +217,7 @@ Double ::= (DecInteger | DecSinglePrecision) 'D' | SciDoublePrecision
 	12.3E+1
 @[test(code_03)]
 @[test(code_03)]
-	123D
+	123.0
 @[test(code_03)]
 
 
@@ -225,12 +225,12 @@ Double ::= (DecInteger | DecSinglePrecision) 'D' | SciDoublePrecision
 	123E-1
 @[test(code_03)]
 @[test(code_03)]
-	12.3D
+	12.3
 @[test(code_03)]
 
 
 @[test(code_03)]
-	io.writef( '%g', 123E-1 )
+	io.writef( "%g", 123E-1 )
 @[test(code_03)]
 @[test(code_03)]
 	12.3
@@ -241,7 +241,7 @@ Double ::= (DecInteger | DecSinglePrecision) 'D' | SciDoublePrecision
 	io.writeln( std.about( 123E-1 ) )
 @[test(code_03)]
 @[test(code_03)]
-	double
+	float
 @[test(code_03)]
 
 
@@ -286,124 +286,54 @@ Double ::= (DecInteger | DecSinglePrecision) 'D' | SciDoublePrecision
 
 
 #{
-Complex ::= Float '$'
+Complex ::= Float 'C'
 #}
 
 
 @[test(code_03)]
-	io.writeln( 0$ )
+	io.writeln( 0C )
 @[test(code_03)]
 @[test(code_03)]
-	0%.(0+) %+ 0%.(0+) %$
-@[test(code_03)]
-
-
-@[test(code_03)]
-	io.writeln( 123$ )
-@[test(code_03)]
-@[test(code_03)]
-	0%.(0+) %+ 123%.(0+) %$
+	0%.(0+) %+ 0%.(0+) C
 @[test(code_03)]
 
 
 @[test(code_03)]
-	io.writeln( 12.3$ )
+	io.writeln( 123C )
 @[test(code_03)]
 @[test(code_03)]
-	0%.(0+) %+ 12%.3(0+) %$
-@[test(code_03)]
-
-
-@[test(code_03)]
-	io.writeln( 123e1$ )
-@[test(code_03)]
-@[test(code_03)]
-	0%.(0+) %+ 1230%.(0+) %$
+	0%.(0+) %+ 123%.(0+) C
 @[test(code_03)]
 
 
 @[test(code_03)]
-	io.writeln( 123e-1$ )
+	io.writeln( 12.3C )
 @[test(code_03)]
 @[test(code_03)]
-	0%.(0+) %+ 12%.3(0+) %$
-@[test(code_03)]
-
-
-@[test(code_03)]
-	0X1$
-@[test(code_03)]
-@[test(code_03)]
-	WARNING
-@[test(code_03)]
-
-
-#{
-LongBase ::= '2' ... '16'
-Long ::= Integer 'L' [ LongBase ]
-#}
-
-@[test(code_03)]
-	io.writeln( 123L )
-@[test(code_03)]
-@[test(code_03)]
-	123L
+	0%.(0+) %+ 12%.3(0+) C
 @[test(code_03)]
 
 
 @[test(code_03)]
-	io.writeln( 0xffL )
+	io.writeln( 123e1C )
 @[test(code_03)]
 @[test(code_03)]
-	255L
-@[test(code_03)]
-
-
-@[test(code_03)]
-	io.writeln( 100111001L2 )
-@[test(code_03)]
-@[test(code_03)]
-	0* 100111001L2
+	0%.(0+) %+ 1230%.(0+) C
 @[test(code_03)]
 
 
 @[test(code_03)]
-	io.writeln( 0xffL8 )
+	io.writeln( 123e-1C )
 @[test(code_03)]
 @[test(code_03)]
-	377L8
+	0%.(0+) %+ 12%.3(0+) C
 @[test(code_03)]
-
-
-@[test(code_03)]
-	125L2
-@[test(code_03)]
-@[test(code_03)]
-	Invalid %s number %s digit
-@[test(code_03)]
-
-
-@[test(code_03)]
-	0L1
-@[test(code_03)]
-@[test(code_03)]
-	Invalid %s number %s radix
-@[test(code_03)]
-
-
-@[test(code_03)]
-	123L20
-@[test(code_03)]
-@[test(code_03)]
-	Invalid %s number %s radix
-@[test(code_03)]
-
 
 
 
 # Incomplete string:
 @[test(code_03)]
-	'incomplete string
+	"incomplete string
 @[test(code_03)]
 @[test(code_03)]
 	Invalid %s token

@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,15 +14,16 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include <string.h>
@@ -30,10 +31,44 @@
 #include "daoStream.h"
 
 
+FILE* Dao_OpenFile( const char *file, const char *mode )
+{
+#if WIN32
+	DString file2 = DString_WrapChars( file );
+	DString mode2 = DString_WrapChars( mode );
+	DArray *file3 = DArray_New( sizeof(wchar_t) );
+	DArray *mode3 = DArray_New( sizeof(wchar_t) );
+	FILE *pfile;
+	DString_DecodeUTF8( & file2, file3 );
+	DString_DecodeUTF8( & mode2, mode3 );
+	pfile = _wfopen( file3->data.wchars, mode3->data.wchars );
+	DArray_Delete( file3 );
+	DArray_Delete( mode3 );
+	return pfile;
+#else
+	return fopen( file, mode );
+#endif
+}
+int Dao_FileStat( const char *path, struct stat *buf )
+{
+#if WIN32
+	DString path2 = DString_WrapChars( path );
+	DArray *path3 = DArray_New( sizeof(wchar_t) );
+	int ret;
+	DString_DecodeUTF8( & path2, path3 );
+	ret = _wstat( path3->data.wchars, buf );
+	DArray_Delete( path3 );
+	return ret;
+#else
+	return stat( path, buf );
+#endif
+}
+
+
 void Dao_NormalizePathSep( DString *path )
 {
 #ifdef WIN32
-	DString_ChangeMBS( path, "\\", "/", 0 );
+	DString_Change( path, "\\", "/", 0 );
 #endif
 }
 
@@ -44,7 +79,7 @@ double Dao_GetCurrentTime()
 #else
 	struct timeval tv;
 	gettimeofday( & tv, NULL);
-	return tv.tv_sec + (double)tv.tv_usec * 1.0E-9;
+	return tv.tv_sec + (double)tv.tv_usec * 1.0E-6;
 #endif
 }
 
@@ -105,13 +140,13 @@ void* Dao_GetSymbolAddress( void *handle, const char *name )
 size_t Dao_FileChangedTime( const char *file )
 {
 	struct stat st;
-	if( stat( file, &st ) ==0 ) return (size_t) st.st_mtime;
+	if( Dao_FileStat( file, &st ) ==0 ) return (size_t) st.st_mtime;
 	return 0;
 }
 int Dao_IsFile( const char *file )
 {
 	struct stat st;
-	if( stat( file, &st ) ) return 0;
+	if( Dao_FileStat( file, &st ) ) return 0;
 #if WIN32
 	return (st.st_mode & _S_IFDIR) == 0;
 #else
@@ -121,7 +156,7 @@ int Dao_IsFile( const char *file )
 int Dao_IsDir( const char *file )
 {
 	struct stat st;
-	if( stat( file, &st ) ) return 0;
+	if( Dao_FileStat( file, &st ) ) return 0;
 #if WIN32
 	return (st.st_mode & _S_IFDIR) != 0;
 #else
@@ -210,7 +245,7 @@ static int SetCharColor( DaoStream *stream, int color, const char *csi )
 		snprintf( buf, sizeof( buf ), CSI_RESET );
 	else
 		snprintf( buf, sizeof( buf ), csi, color );
-	DaoStream_WriteMBS( stream, buf );
+	DaoStream_WriteChars( stream, buf );
 	return 254;
 }
 static int SetCharForeground( DaoStream *stream, int color )
@@ -230,10 +265,12 @@ static int MapColor( const char *mbs )
 	return 254;
 }
 
-void DaoStream_SetColor( DaoStream *self, const char *fgcolor, const char *bgcolor )
+int DaoStream_SetColor( DaoStream *self, const char *fgcolor, const char *bgcolor )
 {
 	static int fg = -1;
 	static int bg = -1;
+	if( fgcolor && fgcolor[0] && MapColor( fgcolor ) >= 254 ) return 0;
+	if( bgcolor && bgcolor[0] && MapColor( bgcolor ) >= 254 ) return 0;
 	if( self->redirect == NULL && self->file == NULL ){
 		/* reset first, because resetting one of foreground and background could reset both: */
 		if( fg >= 0 && (fgcolor == NULL || fgcolor[0] == 0) ) SetCharForeground( self, fg );
@@ -241,14 +278,15 @@ void DaoStream_SetColor( DaoStream *self, const char *fgcolor, const char *bgcol
 
 		if( fgcolor && fgcolor[0] ) fg = SetCharForeground( self, MapColor( fgcolor ) );
 		if( bgcolor && bgcolor[0] ) bg = SetCharBackground( self, MapColor( bgcolor ) );
-		return;
+		return 1;
 	}
-	if( self->redirect == NULL || self->redirect->SetColor == NULL ) return;
+	if( self->redirect == NULL || self->redirect->SetColor == NULL ) return 0;
 	self->redirect->SetColor( self->redirect, fgcolor, bgcolor );
+	return 1;
 }
 
 #else
 
-void DaoStream_SetColor( DaoStream *self, const char *fgcolor, const char *bgcolor ){}
+int DaoStream_SetColor( DaoStream *self, const char *fgcolor, const char *bgcolor ){ return 0; }
 
 #endif

@@ -39,15 +39,15 @@ io.writeln( Bool::False )
 io.writeln( Bool.True )
 @[test()]
 @[test()]
-$False=0
-$True=1
+$False(0)
+$True(1)
 @[test()]
 
 
 @[test()]
 switch( Bool.False ){
-case Bool::False : io.writeln( 'Bool::False' )
-case Bool::True  : io.writeln( 'Bool::True' )
+case Bool::False : io.writeln( "Bool::False" )
+case Bool::True  : io.writeln( "Bool::True" )
 }
 @[test()]
 @[test()]
@@ -58,8 +58,8 @@ Bool::False
 
 @[test()]
 switch( (Bool) $True ){
-case Bool::False : io.writeln( 'Bool::False' )
-case Bool::True  : io.writeln( 'Bool::True' )
+case Bool::False : io.writeln( "Bool::False" )
+case Bool::True  : io.writeln( "Bool::True" )
 }
 @[test()]
 @[test()]
@@ -73,7 +73,7 @@ bl : Bool = $True
 io.writeln( bl )
 @[test()]
 @[test()]
-$True=1
+$True(1)
 @[test()]
 
 
@@ -88,16 +88,6 @@ a = True;
 
 
 @[test()]
-use enum Bool
-a = True
-@[test()]
-@[test()]
-1
-@[test()]
-
-
-
-@[test()]
 flag = Bool.False + Bool.True
 @[test()]
 @[test()]
@@ -105,3 +95,13 @@ flag = Bool.False + Bool.True
 @[test()]
 
 
+
+
+@[test()]
+const False : int = Bool::False
+const True  : int = Bool::True
+io.writeln( False, True )
+@[test()]
+@[test()]
+0 1
+@[test()]

@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,15 +14,16 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include"daoConst.h"
@@ -32,26 +33,18 @@ static const char* const daoCtInfo[] =
 	"",
 	"internal error",
 	"exceed parameter number limit",
-	"Undefined symbol",
-	"Unpaired tokens",
 	"is expected",
-	"is not expected",
-	"is not declared",
 	"has been previously defined",
 	"Statements not seperated properly",
 	"Assignment inside expression",
 	"Getter/setter may not be used for",
 	"No method to use from",
-	"No public field is allowed in asynclass",
-	"No static field is allowed in asynclass",
 	"Symbol possibly undefined",
 	"Symbol not defined",
 	"Symbol was defined",
 	"Need symbol of constant",
 	"Need symbol of class",
 	"Need symbol of class or C type",
-	"Need symbol of non-asynchronous class",
-	"Need symbol of asynchronous class",
 	"Need symbol of interface",
 	"Need bindable type (Dao class or C type)",
 	"Need string token",
@@ -75,24 +68,26 @@ static const char* const daoCtInfo[] =
 	"Invalid storage type/combination",
 	"Invalid access of shared data",
 	"Invalid constant literal",
-	"Invalid number radix",
-	"Invalid number digit",
+	"Invalid index",
 	"Invalid type name",
 	"Invalid type form",
 	"Invalid reference to non-local variable",
 	"Invalid expression",
 	"Invalid statement",
+	"Unclosed scope",
 	"Invalid scope ending",
+	"Invalid target pattern for decorator",
 	"Invalid functional method",
 	"Invalid definition",
 	"Invalid enum definition",
 	"Invalid class definition",
-	"Invalid asynchronous class definition",
 	"Invalid function definition",
+	"Invalid namespace definition",
 	"Invalid interface definition",
 	"Invalid function decoration",
 	"Invalid parent class",
-	"Invalid use statement",
+	"Invalid mixin class",
+	"Invalid import statement",
 	"Invalid type aliasing",
 	"Invalid interface binding",
 	"Invalid type define",
@@ -120,8 +115,10 @@ static const char* const daoCtInfo[] =
 	"Type of expected value",
 	"Type without default value",
 	"Function need return type",
+	"Invalid decorator definition",
 	"Invalid operator for overloading",
-	"Constructor cannot return",
+	"Invalid first parameter name for the decorator",
+	"Invalid return for the constructor or defer block",
 	"Method need implementation",
 	"Method implementation is redundant",
 	"Method not declared",
@@ -132,68 +129,23 @@ static const char* const daoCtInfo[] =
 	"Method signature not matching",
 	"Constructor not defined",
 	"Invalid case statement",
+	"Case type not valid",
 	"Case value not constant",
 	"Case values not distinctive",
 	"Duplicated default case",
+	"Constant evaluation aborted with exception(s)",
 	"Cyclic loading detected",
 	"String pattern matching is disabled",
-	"Long integer type is disabled",
 	"Numeric array is disabled",
-	"Synchronous class is disabled",
-	"Template class is disabled",
-	"Runtime class creation is disabled",
 	"Function decorator is disabled",
-	"default parameter is not const",
-	"invalid parameter list",
-	"parameter number not correct",
-	"invalid named parameter",
-	"invalid parameter default",
-	"my, is used in non-constructor routine",
-	"uncompatible variable prefix",
-	"invalid for statement",
-	"invalid for-in-do statement",
-	"invalid case for switch",
-	"case with non-const value",
-	"case is not directly nested by switch",
 	"invalid load statement",
-	"invalid path for loading",
-	"invalid variable name for importing",
 	"invalid module name for loading",
 	"loading failed",
 	"loading cancelled",
-	"variable(s) not found for importing",
-	"redundant code in load statement",
-	"attempt to init const var from non-const expr",
-	"attempt to modify const",
-	"invalid expression",
 	"invalid enumeration",
 	"exceed matrix enumeration limit",
-	"invalid multi-assignment",
-	"invalid string literal",
-	"un-paired quotation symbol",
-	"for assignment inside an expression, use :=",
-	"different version of dao.h is used",
-	"invalid Dao script embedding",
 	"invalid syntax",
-	"unmatched assignment",
-	"re-definition of variable",
-	"invalid syntax definition",
-	"invalid first token in macro defintion",
-	"invalid macro group opening",
-	"unknown macro variable type",
-	"unknown macro repeat type",
-	"unknown special token in the macro",
-	"invalid indentation marker in the macro",
-	"re-definition of special marker",
-	"undefine macro marker",
-	"unmatched grouping level" ,
-	"invalid type form",
-	"invalid type name",
 	"invalid constant expression",
-	"not permited in the safe running mode",
-	"type not matched",
-	"interface binding failed",
-	"is not enabled",
 	"obsolete syntax",
 	""
 };
@@ -208,61 +160,54 @@ const char* getRtInfo( int tp )
 	return "";
 }
 
-const char* const daoExceptionName[] =
+const char* const daoExceptionNames[] =
 {
 	"Exception" ,
-	"Exception.None" ,
-	"Exception.Any" ,
-	"Exception.Warning" ,
-	"Exception.Error" ,
-	"Exception.Error.Field" ,
-	"Exception.Error.Field.NotExist" ,
-	"Exception.Error.Field.NotPermit" ,
-	"Exception.Error.Float" ,
-	"Exception.Error.Float" ,
-	"Exception.Error.Float" ,
-	"Exception.Error.Float" ,
-	"Exception.Error.Index" ,
-	"Exception.Error.Index.OutOfRange" ,
-	"Exception.Error.Key" ,
-	"Exception.Error.Key.NotExist" ,
-	"Exception.Error.Param" ,
-	"Exception.Error.Syntax" ,
-	"Exception.Error.Type" ,
-	"Exception.Error.Value" ,
-	"Exception.Warning.Syntax" ,
-	"Exception.Warning.Value"
+	"Warning" ,
+	"Error" ,
+	"Error::Field" ,
+	"Error::Field::NotExist" ,
+	"Error::Field::NotPermit" ,
+	"Error::Float" ,
+	"Error::Float::DivByZero" ,
+	"Error::Float::OverFlow" ,
+	"Error::Float::UnderFlow" ,
+	"Error::Index" ,
+	"Error::Index::Range" ,
+	"Error::Key" ,
+	"Error::Key::NotExist" ,
+	"Error::Param" ,
+	"Error::Syntax" ,
+	"Error::Type" ,
+	"Error::Value" ,
+	"Error::File"
 };
-const char* const daoExceptionInfo[] =
+const char* const daoExceptionTitles[] =
 {
-	"certain exception" ,
-	"none exception" ,
-	"any or none exception" ,
-	"certain warning" ,
-	"certain error" ,
-	"invalid field accessing" ,
-	"field not exist" ,
-	"field not permit" ,
-	"invalid floating point operation" ,
-	"division by zero" ,
-	"floating point overflow" ,
-	"floating point underflow" ,
-	"invalid index" ,
-	"index out of range" ,
-	"invalid key" ,
-	"key not exist" ,
-	"invalid parameter list for the call" ,
-	"invalid syntax" ,
-	"invalid variable type for the operation" ,
-	"invalid variable value for the operation" ,
-	"file error",
-	"invalid syntax" ,
-	"invalid value for the operation"
+	"General exception" ,
+	"General warning" ,
+	"General error" ,
+	"Invalid field" ,
+	"Field not exist" ,
+	"Field not permit" ,
+	"Floating point error" ,
+	"Division by zero" ,
+	"Floating point overflow" ,
+	"Floating point underflow" ,
+	"Invalid index" ,
+	"Index out of range" ,
+	"Invalid key" ,
+	"Key not exist" ,
+	"Invalid parameter(s)" ,
+	"Invalid syntax" ,
+	"Invalid type" ,
+	"Invalid value" ,
+	"File error"
 };
 
 const char* const coreTypeNames[] =
 {
-	"none", "int", "float", "double", "complex", "long", "string",
+	"none", "int", "float", "complex", "string",
 	"enum", "array", "list", "map", "tuple"
 };
 const char *const daoBitBoolArithOpers[] = {
@@ -278,22 +223,3 @@ const char *daoRoutineCodeHeader =
 "   ID :    OPCODE    :     A ,     B ,     C ;  [ LINE ],  NOTES\n";
 const char *daoRoutineCodeFormat = "%-11s : %5i , %5i , %5i ;  %4i;   %s\n";
 
-const char utf8_markers[256] =
-{
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 00 - 0F */
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 10 - 1F */
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 20 - 2F */
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 30 - 3F */
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 40 - 4F */
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 50 - 5F */
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 60 - 6F */
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* 70 - 7F */
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* 80 - 8F */
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* 90 - 9F */
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* A0 - AF */
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, /* B0 - BF */
-	2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, /* C0 - CF */
-	2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, /* D0 - DF */
-	3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, /* E0 - EF */
-	4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 7, 7  /* F0 - FF */
-};

@@ -16,7 +16,7 @@ routine TestVariadicFunction( a : string, ... : int )
 
 # Test default parameter:
 @[test(code_01)]
-	TestFunction( 'abc' )
+	TestFunction( "abc" )
 @[test(code_01)]
 @[test(code_01)]
 	abc %s 123
@@ -24,7 +24,7 @@ routine TestVariadicFunction( a : string, ... : int )
 
 
 @[test(code_01)]
-	TestFunction( 'abc', 456.5 )  # implicit conversion;
+	TestFunction( "abc", 456.5 )  # implicit conversion;
 @[test(code_01)]
 @[test(code_01)]
 	abc %s 456
@@ -40,7 +40,7 @@ routine TestVariadicFunction( a : string, ... : int )
 
 
 @[test(code_01)]
-	TestFunction( 'abc', 123, 456 )
+	TestFunction( "abc", 123, 456 )
 @[test(code_01)]
 @[test(code_01)]
 	{{At line}} .* {{too many parameters}}
@@ -49,14 +49,14 @@ routine TestVariadicFunction( a : string, ... : int )
 
 
 @[test(code_01)]
-	TestVariadicFunction( 'abc' )  # right parameter;
+	TestVariadicFunction( "abc" )  # right parameter;
 @[test(code_01)]
 @[test(code_01)]
 @[test(code_01)]
 
 
 @[test(code_01)]
-	TestVariadicFunction( 'abc', 123 )  # right parameter;
+	TestVariadicFunction( "abc", 123 )  # right parameter;
 @[test(code_01)]
 @[test(code_01)]
 @[test(code_01)]
@@ -71,7 +71,7 @@ routine TestVariadicFunction( a : string, ... : int )
 
 
 @[test(code_01)]
-	TestVariadicFunction( 'abc', 'abc' )  # wrong second parameter;
+	TestVariadicFunction( "abc", "abc" )  # wrong second parameter;
 @[test(code_01)]
 @[test(code_01)]
 	{{At line}} .* {{Invalid parameter type}}
@@ -84,12 +84,12 @@ routine TestVariadicFunction( a : string, ... : int )
 ## With function type only
 ##########################
 
-global TestFunction2 = TestFunction
-global TestVariadicFunction2 = TestVariadicFunction
+var TestFunction2 = TestFunction
+var TestVariadicFunction2 = TestVariadicFunction
 
 # Test default parameter:
 @[test(code_01)]
-	TestFunction2( 'abc' )
+	TestFunction2( "abc" )
 @[test(code_01)]
 @[test(code_01)]
 	abc %s 123
@@ -97,7 +97,7 @@ global TestVariadicFunction2 = TestVariadicFunction
 
 
 @[test(code_01)]
-	TestFunction2( 'abc', 456.5 )  # implicit conversion;
+	TestFunction2( "abc", 456.5 )  # implicit conversion;
 @[test(code_01)]
 @[test(code_01)]
 	abc %s 456
@@ -113,7 +113,7 @@ global TestVariadicFunction2 = TestVariadicFunction
 
 
 @[test(code_01)]
-	TestFunction2( 'abc', 123, 456 )
+	TestFunction2( "abc", 123, 456 )
 @[test(code_01)]
 @[test(code_01)]
 	{{At line}} .* {{too many parameters}}
@@ -122,14 +122,14 @@ global TestVariadicFunction2 = TestVariadicFunction
 
 
 @[test(code_01)]
-	TestVariadicFunction2( 'abc' )  # right parameter;
+	TestVariadicFunction2( "abc" )  # right parameter;
 @[test(code_01)]
 @[test(code_01)]
 @[test(code_01)]
 
 
 @[test(code_01)]
-	TestVariadicFunction2( 'abc', 123 )  # right parameter;
+	TestVariadicFunction2( "abc", 123 )  # right parameter;
 @[test(code_01)]
 @[test(code_01)]
 @[test(code_01)]
@@ -144,7 +144,7 @@ global TestVariadicFunction2 = TestVariadicFunction
 
 
 @[test(code_01)]
-	TestVariadicFunction2( 'abc', 'abc' )  # wrong second parameter;
+	TestVariadicFunction2( "abc", "abc" )  # wrong second parameter;
 @[test(code_01)]
 @[test(code_01)]
 	{{At line}} .* {{Invalid parameter type}}
@@ -155,12 +155,12 @@ global TestVariadicFunction2 = TestVariadicFunction
 ## Dynamic Checking
 ##########################
 
-global TestFunction3 : any = TestFunction
-global TestVariadicFunction3 : any = TestVariadicFunction
+var TestFunction3 : any = TestFunction
+var TestVariadicFunction3 : any = TestVariadicFunction
 
 # Test default parameter:
 @[test(code_01)]
-	TestFunction3( 'abc' )
+	TestFunction3( "abc" )
 @[test(code_01)]
 @[test(code_01)]
 	abc %s 123
@@ -168,7 +168,7 @@ global TestVariadicFunction3 : any = TestVariadicFunction
 
 
 @[test(code_01)]
-	TestFunction3( 'abc', 456.5 )  # implicit conversion;
+	TestFunction3( "abc", 456.5 )  # implicit conversion;
 @[test(code_01)]
 @[test(code_01)]
 	abc %s 456
@@ -179,28 +179,28 @@ global TestVariadicFunction3 : any = TestVariadicFunction
 	TestFunction3()
 @[test(code_01)]
 @[test(code_01)]
-	{{Exception.Error.Param}} .* {{too few parameters}}
+	{{Error::Param}} .* {{too few parameters}}
 @[test(code_01)]
 
 
 @[test(code_01)]
-	TestFunction3( 'abc', 123, 456 )
+	TestFunction3( "abc", 123, 456 )
 @[test(code_01)]
 @[test(code_01)]
-	{{Exception.Error.Param}} .* {{too many parameters}}
-@[test(code_01)]
-
-
-
-@[test(code_01)]
-	TestVariadicFunction3( 'abc' )  # right parameter;
-@[test(code_01)]
-@[test(code_01)]
+	{{Error::Param}} .* {{too many parameters}}
 @[test(code_01)]
 
 
+
 @[test(code_01)]
-	TestVariadicFunction3( 'abc', 123 )  # right parameter;
+	TestVariadicFunction3( "abc" )  # right parameter;
+@[test(code_01)]
+@[test(code_01)]
+@[test(code_01)]
+
+
+@[test(code_01)]
+	TestVariadicFunction3( "abc", 123 )  # right parameter;
 @[test(code_01)]
 @[test(code_01)]
 @[test(code_01)]
@@ -210,14 +210,56 @@ global TestVariadicFunction3 : any = TestVariadicFunction
 	TestVariadicFunction3( 123 )  # wrong first parameter;
 @[test(code_01)]
 @[test(code_01)]
-	{{Exception.Error.Param}} .* {{Invalid parameter type}}
+	{{Error::Param}} .* {{Invalid parameter type}}
 @[test(code_01)]
 
 
 @[test(code_01)]
-	TestVariadicFunction3( 'abc', 'abc' )  # wrong second parameter;
+	TestVariadicFunction3( "abc", "abc" )  # wrong second parameter;
 @[test(code_01)]
 @[test(code_01)]
-	{{Exception.Error.Param}} .* {{Invalid parameter type}}
+	{{Error::Param}} .* {{Invalid parameter type}}
 @[test(code_01)]
 
+
+
+
+@[test(code_01)]
+routine f(...: tuple<enum<a>, int>){ io.writeln(1) }
+routine f(...: tuple<enum<b>, int>){ io.writeln(2) }
+
+f(a = 1)
+f(b = 1)
+@[test(code_01)]
+@[test(code_01)]
+1
+2
+@[test(code_01)]
+
+
+
+
+@[test(code_01)]
+routine f() => list<tuple<a:int,b:int>>
+{
+	return {(1,2), (3,4)}
+}
+routine g() => tuple<list<int>, list<string>>
+{
+	return ({}, {})
+}
+@[test(code_01)]
+@[test(code_01)]
+@[test(code_01)]
+
+
+
+
+@[test(code_01)]
+routine f() => tuple<list<int>, list<string>>
+{
+	({}, {})
+}
+@[test(code_01)]
+@[test(code_01)]
+@[test(code_01)]

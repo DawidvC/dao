@@ -4,25 +4,25 @@
 # and return a string.
 routine Test()[X:int=>string] => string
 {
-	io.writeln( 'In functional method!' );
+	io.writeln( "In functional method!" );
 	s = yield( 123 ); # execute the code section;
-	io.writeln( 'Yielded value:', s );
+	io.writeln( "Yielded value:", s );
 	return s;
 }
 
-Test::{
-	io.writeln( 'In code section:', X );
-	return 'abc';
+Test { [X]
+	io.writeln( "In code section:", X );
+	return "abc";
 }
 
-routine Test( alist : list<@T> )[ item :@T, index :int =>int ] =>list<@T>
+routine Test( alist : list<@T> )[ item :@T, index :int => none|int ] =>list<@T>
 {
 	yield( 55, 0 ); # invoke the code section of the caller;
-	io.writeln( alist.select::{ X < 33 } );
-	# call the list functional method with the caller's code section;
-	return alist.select::{ yield(X,Y) };
+	io.writeln( alist.collect{ [X] if( X < 33 ) return X } );
+	# call the list functional method with the caller"s code section;
+	return alist.collect{ [X,Y] yield(X,Y) };
 }
 
-res = Test( {11,22,33,44} )::{ X > 22 }
+res = Test( {11,22,33,44} ){ [X] X > 22 }
 
 io.writeln( res, std.about(res) );

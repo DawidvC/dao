@@ -1,0 +1,13 @@
+
+if( DaoMake::IsPlatform( "UNIX" ) ){
+	cflags = DaoMake::Shell( "GraphicsMagick-config --cflags" )
+	lflags = DaoMake::Shell( "GraphicsMagick-config --ldflags" )
+	libs = DaoMake::Shell( "GraphicsMagick-config --libs" )
+	stlibs = ""
+	if( libs == "" ) return;
+
+	magick = DaoMake::Project( "GraphicsMagick" )
+	magick.AddSharedLibrary( "Magick" )
+	magick.AddCompilingFlag( cflags.chop() )
+	magick.AddLinkingFlag( lflags.chop() + " " + libs.chop() )
+}

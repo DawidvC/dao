@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,15 +14,16 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include"stdio.h"
@@ -39,6 +40,7 @@
 #include"daoValue.h"
 
 void DaoProcess_ShowCallError( DaoProcess *self, DaoRoutine *rout, DaoValue *selfobj, DaoValue *ps[], int np, int code );
+
 int DaoObject_InvokeMethod( DaoObject *self, DaoObject *othis, DaoProcess *proc,
 		DString *name, DaoValue *P[], int N, int ignore_return, int execute )
 {
@@ -63,24 +65,24 @@ static void DaoObject_Print( DaoValue *self0, DaoProcess *proc, DaoStream *strea
 	sprintf( buf, "[%p]", self );
 	if( self0 == self->defClass->objType->value ){
 		DaoStream_WriteString( stream, self->defClass->className );
-		DaoStream_WriteMBS( stream, "[default]" );
+		DaoStream_WriteChars( stream, "[null]" );
 		return;
 	}
 	if( cycData != NULL && DMap_Find( cycData, self ) != NULL ){
 		DaoStream_WriteString( stream, self->defClass->className );
-		DaoStream_WriteMBS( stream, buf );
+		DaoStream_WriteChars( stream, buf );
 		return;
 	}
 	if( cycData ) MAP_Insert( cycData, self, self );
 
-	DString_SetMBS( proc->mbstring, "serialize" );
+	DString_SetChars( proc->mbstring, "serialize" );
 	DaoValue_Clear( & proc->stackValues[0] );
 	ec = DaoObject_InvokeMethod( self, proc->activeObject, proc, proc->mbstring, NULL,0,1,1 );
 	if( ec && ec != DAO_ERROR_FIELD_NOTEXIST ){
-		DaoProcess_RaiseException( proc, ec, DString_GetMBS( proc->mbstring ) );
+		DaoProcess_RaiseException( proc, daoExceptionNames[ec], proc->mbstring->chars, NULL );
 	}else if( ec == DAO_ERROR_FIELD_NOTEXIST || proc->stackValues[0] == NULL ){
 		DaoStream_WriteString( stream, self->defClass->className );
-		DaoStream_WriteMBS( stream, buf );
+		DaoStream_WriteChars( stream, buf );
 	}else{
 		DaoValue_Print( proc->stackValues[0], proc, stream, cycData );
 	}
@@ -91,13 +93,21 @@ static void DaoObject_Core_GetField( DaoValue *self0, DaoProcess *proc, DString 
 	DaoValue *value = NULL;
 	int rc = DaoObject_GetData( self, name, & value, proc->activeObject );
 	if( rc ){
-		DString_SetMBS( proc->mbstring, "." );
-		DString_Append( proc->mbstring, name );
-		rc = DaoObject_InvokeMethod( self, proc->activeObject, proc, proc->mbstring, NULL,0,0,0 );
+		DString *field = proc->mbstring;
+		DString_SetChars( field, "." );
+		DString_Append( field, name );
+		rc = DaoObject_InvokeMethod( self, proc->activeObject, proc, field, NULL,0,0,0 );
+		if( rc == DAO_ERROR_FIELD_NOTEXIST ){
+			DaoString str = {DAO_STRING,0,0,0,1,NULL};
+			DaoValue *pars = (DaoValue*) & str;
+			str.value = name;
+			DString_SetChars( field, "." );
+			rc = DaoObject_InvokeMethod( self, proc->activeObject, proc, field, &pars,1,0,0 );
+		}
 	}else{
-		DaoProcess_PutReference( proc, value );
+		DaoProcess_PutValue( proc, value );
 	}
-	if( rc ) DaoProcess_RaiseException( proc, rc, DString_GetMBS( name ) );
+	if( rc ) DaoProcess_RaiseException( proc, daoExceptionNames[rc], name->chars, NULL );
 }
 static void DaoObject_Core_SetField( DaoValue *self0, DaoProcess *proc, DString *name, DaoValue *value )
 {
@@ -106,25 +116,30 @@ static void DaoObject_Core_SetField( DaoValue *self0, DaoProcess *proc, DString 
 	int ec2 = ec;
 	if( ec != DAO_ERROR ){
 		DString *mbs = proc->mbstring;
-		DString_SetMBS( mbs, "." );
+		DString_SetChars( mbs, "." );
 		DString_Append( mbs, name );
-		DString_AppendMBS( mbs, "=" );
+		DString_AppendChars( mbs, "=" );
 		ec = DaoObject_InvokeMethod( self, proc->activeObject, proc, mbs, & value, 1,1,0 );
+		if( ec == DAO_ERROR_FIELD_NOTEXIST ){
+			DaoString str = {DAO_STRING,0,0,0,1,NULL};
+			DaoValue *pars[2];
+			pars[0] = (DaoValue*) & str;
+			pars[1] = value;
+			str.value = name;
+			DString_SetChars( mbs, ".=" );
+			ec = DaoObject_InvokeMethod( self, proc->activeObject, proc, mbs, pars,2,1,0 );
+		}
 		if( ec == DAO_ERROR_FIELD_NOTEXIST ) ec = ec2;
 	}
-	if( ec == DAO_ERROR ){
-		DaoProcess_RaiseException( proc, ec, "cannot modify default class instance" );
-	}else{
-		DaoProcess_RaiseException( proc, ec, DString_GetMBS( name ) );
-	}
+	if( ec ) DaoProcess_RaiseException( proc, daoExceptionNames[ec], name->chars, NULL );
 }
 static void DaoObject_GetItem( DaoValue *self0, DaoProcess *proc, DaoValue *ids[], int N )
 {
 	DaoObject *self = & self0->xObject;
 	int rc = 0;
-	DString_SetMBS( proc->mbstring, "[]" );
+	DString_SetChars( proc->mbstring, "[]" );
 	rc = DaoObject_InvokeMethod( self, proc->activeObject, proc, proc->mbstring, ids, N,0,0 );
-	if( rc ) DaoProcess_RaiseException( proc, rc, DString_GetMBS( proc->mbstring ) );
+	if( rc ) DaoProcess_RaiseException( proc, daoExceptionNames[rc], proc->mbstring->chars, NULL );
 }
 static void DaoObject_SetItem( DaoValue *self0, DaoProcess *proc, DaoValue *ids[], int N, DaoValue *value )
 {
@@ -133,9 +148,9 @@ static void DaoObject_SetItem( DaoValue *self0, DaoProcess *proc, DaoValue *ids[
 	int rc;
 	memcpy( ps+1, ids, N*sizeof(DaoValue*) );
 	ps[0] = value;
-	DString_SetMBS( proc->mbstring, "[]=" );
+	DString_SetChars( proc->mbstring, "[]=" );
 	rc = DaoObject_InvokeMethod( self, proc->activeObject, proc, proc->mbstring, ps, N+1,1,0 );
-	if( rc ) DaoProcess_RaiseException( proc, rc, DString_GetMBS( proc->mbstring ) );
+	if( rc ) DaoProcess_RaiseException( proc, daoExceptionNames[rc], proc->mbstring->chars, NULL );
 }
 
 static DaoTypeCore objCore =
@@ -156,20 +171,19 @@ DaoTypeBase objTyper=
 
 DaoObject* DaoObject_Allocate( DaoClass *klass, int value_count )
 {
-	int parent_count = klass->superClass->size;
-	int extra = (parent_count + value_count - 1)*sizeof(DaoValue*);
+	int extra = value_count * sizeof(DaoValue*);
 	DaoObject *self = (DaoObject*) dao_calloc( 1, sizeof(DaoObject) + extra );
 
 	DaoValue_Init( self, DAO_OBJECT );
 	GC_IncRC( klass );
 	self->defClass = klass;
 	self->isRoot = 1;
-	self->isDefault = 0;
-	self->baseCount = parent_count;
-	self->baseCount2 = parent_count;
 	self->valueCount = value_count;
-	self->objValues = self->parents + parent_count;
-	memset( self->parents, 0, (parent_count + value_count)*sizeof(DaoValue*) );
+	self->objValues = (DaoValue**) (self + 1);
+	memset( self->objValues, 0, value_count*sizeof(DaoValue*) );
+#ifdef DAO_USE_GC_LOGGER
+	DaoObjectLogger_LogNew( (DaoValue*) self );
+#endif
 	return self;
 }
 DaoObject* DaoObject_New( DaoClass *klass )
@@ -185,48 +199,38 @@ void DaoObject_Init( DaoObject *self, DaoObject *that, int offset )
 	DaoClass *klass = self->defClass;
 	daoint i;
 
+	self->isAsync = (klass->attribs & DAO_CLS_ASYNCHRONOUS) != 0;
 	if( that ){
-		GC_ShiftRC( that, self->rootObject );
-		self->rootObject = that;
+		GC_Assign( & self->rootObject, that );
 		self->objValues = that->objValues + offset;
 	}else if( self->rootObject == NULL ){
-		GC_IncRC( self );
-		self->rootObject = self;
-		if( self->isDefault ){ /* no value space is allocated for default object yet! */
-			self->baseCount = klass->superClass->size;
-			self->baseCount2 = klass->superClass->size;
+		GC_Assign( & self->rootObject, self );
+		if( self->isNull ){ /* no value space is allocated for null object yet! */
 			self->valueCount = klass->objDataName->size;
 			self->objValues = (DaoValue**) dao_calloc( self->valueCount, sizeof(DaoValue*) );
 		}
 	}
 	offset += self->defClass->objDefCount;
-	for(i=0; i<klass->superClass->size; i++){
-		DaoClass *supclass = klass->superClass->items.pClass[i];
+	if( klass->parent != NULL && klass->parent->type == DAO_CLASS ){
 		DaoObject *sup = NULL;
-		if( supclass->type == DAO_CLASS ){
-			if( self->isDefault ){
-				sup = & supclass->objType->value->xObject;
-			}else{
-				sup = DaoObject_Allocate( supclass, 0 );
-				sup->isRoot = 0;
-				DaoObject_Init( sup, self->rootObject, offset );
-			}
-			GC_IncRC( sup );
-			offset += sup->defClass->objDataName->size;
+		if( self->isNull ){
+			sup = & klass->parent->xClass.objType->value->xObject;
+		}else{
+			sup = DaoObject_Allocate( (DaoClass*) klass->parent, 0 );
+			sup->isRoot = 0;
+			DaoObject_Init( sup, self->rootObject, offset );
 		}
-		self->parents[i] = (DaoValue*)sup;
+		GC_Assign( & self->parent, sup );
 	}
-	self->objValues[0] = (DaoValue*) self;
-	GC_IncRC( self );
+	GC_Assign( & self->objValues[0], self );
 	if( self->isRoot == 0 ) return;
 	for(i=1; i<klass->instvars->size; i++){
 		DaoVariable *var = klass->instvars->items.pVar[i];
 		DaoValue **value = self->objValues + i;
 		/* for data type such as list/map/array,
-		 * its .unitype may need to be set properaly */
+		 * its .ctype may need to be set properaly */
 		if( var->value ){
 			DaoValue_Move( var->value, value, var->dtype );
-			continue;
 		}else if( *value == NULL && var->dtype && var->dtype->value ){
 			DaoValue_Copy( var->dtype->value, value );
 		}
@@ -235,11 +239,14 @@ void DaoObject_Init( DaoObject *self, DaoObject *that, int offset )
 void DaoObject_Delete( DaoObject *self )
 {
 	int i;
+#ifdef DAO_USE_GC_LOGGER
+	DaoObjectLogger_LogDelete( (DaoValue*) self );
+#endif
 	GC_DecRC( self->defClass );
-	for(i=0; i<self->baseCount; i++) GC_DecRC( self->parents[i] );
+	GC_DecRC( self->parent );
 	if( self->isRoot ){
 		for(i=0; i<self->valueCount; i++) GC_DecRC( self->objValues[i] );
-		if( self->objValues != (self->parents + self->baseCount2) ) dao_free( self->objValues );
+		if( self->objValues != (DaoValue**) (self + 1) ) dao_free( self->objValues );
 	}
 	dao_free( self );
 }
@@ -260,65 +267,55 @@ int DaoObject_ChildOf( DaoValue *self, DaoValue *obj )
 		}
 		return 0;
 	}
-	if( self->type != DAO_OBJECT ) return 0;
-	for(i=0; i<self->xObject.baseCount; i++){
-		if( obj == self->xObject.parents[i] ) return 1;
-		if( DaoObject_ChildOf( self->xObject.parents[i], obj ) ) return 1;
-	}
+	if( self->type != DAO_OBJECT || self->xObject.parent == NULL ) return 0;
+	if( obj == self->xObject.parent ) return 1;
+	if( DaoObject_ChildOf( self->xObject.parent, obj ) ) return 1;
 	return 0;
 }
 
 DaoValue* DaoObject_CastToBase( DaoObject *self, DaoType *host )
 {
-	int i;
+	DaoValue *sup = self->parent;
 	if( host == NULL ) return NULL;
+	host = DaoType_GetBaseType( host );
 	if( self->defClass->objType == host ) return (DaoValue*) self;
-	for(i=0; i<self->baseCount; i++){
-		DaoValue *sup = self->parents[i];
-		if( sup == NULL ) return NULL;
-		if( sup->type == DAO_OBJECT ){
-			if( (sup = DaoObject_CastToBase( & sup->xObject, host ) ) ) return sup;
-		}else if( sup->type == DAO_CSTRUCT && host->tid == DAO_CSTRUCT ){
-			if( DaoType_ChildOf( sup->xCdata.ctype, host ) ) return sup;
-		}else if( sup->type == DAO_CDATA && host->tid == DAO_CDATA ){
-			if( DaoType_ChildOf( sup->xCdata.ctype, host ) ) return sup;
-		}
+	if( self->parent == NULL ) return NULL;
+	if( sup->type == DAO_OBJECT ){
+		if( (sup = DaoObject_CastToBase( & sup->xObject, host ) ) ) return sup;
+	}else if( sup->type == DAO_CSTRUCT && host->tid == DAO_CSTRUCT ){
+		if( DaoType_ChildOf( sup->xCdata.ctype, host ) ) return sup;
+	}else if( sup->type == DAO_CDATA && host->tid == DAO_CDATA ){
+		if( DaoType_ChildOf( sup->xCdata.ctype, host ) ) return sup;
 	}
 	return NULL;
 }
-DaoObject* DaoObject_SetParentCdata( DaoObject *self, DaoCdata *parent )
+void DaoObject_SetParentCdata( DaoObject *self, DaoCdata *parent )
 {
-	int i;
 	DaoObject *child = NULL;
-	if( parent == NULL ) return NULL;
-	for(i=0; i<self->baseCount; i++){
-		DaoObject *obj = (DaoObject*) self->parents[i];
-		DaoValue *sup = self->defClass->superClass->items.pValue[i];
-		if( sup == NULL ) continue;
-		if( obj ){
-			if( sup->type == DAO_CLASS ){
-				DaoObject *o = DaoObject_SetParentCdata( obj, parent );
-				/* TODO: map to first common child for multiple inheritance: */
-				if( o ) child = o;
-			}
-			continue;
-		}
-		if( sup->type == DAO_CTYPE ){
-			DaoCdata *cdata = (DaoCdata*)sup;
-			if( DaoType_ChildOf( cdata->ctype, parent->ctype ) ){
-				GC_IncRC( parent );
-				self->parents[i] = (DaoValue*)parent;
-				return self;
-			}
+	DaoObject *obj = (DaoObject*) self->parent;
+	DaoValue *sup = self->defClass->parent;
+	if( parent == NULL ) return;
+	if( sup == NULL ) return;
+	if( obj && obj->type == DAO_OBJECT ){
+		DaoObject_SetParentCdata( obj, parent );
+	}else if( sup->type == DAO_CTYPE ){
+		DaoCdata *cdata = (DaoCdata*)sup;
+		if( DaoType_ChildOf( cdata->ctype, parent->ctype ) ){
+			GC_Assign( & self->parent, parent );
 		}
 	}
-	return child;
 }
-DaoCdata* DaoObject_CastCdata( DaoObject *self, DaoType *type )
+DaoCstruct* DaoObject_CastCstruct( DaoObject *self, DaoType *type )
 {
 	DaoValue *p = NULL;
 	if( type ) p = DaoObject_CastToBase( self, type );
-	if( p && (p->type == DAO_CDATA || p->type == DAO_CSTRUCT) ) return (DaoCdata*) p;
+	if( p && (p->type == DAO_CDATA || p->type == DAO_CSTRUCT) ) return (DaoCstruct*) p;
+	return NULL;
+}
+DaoCdata* DaoObject_CastCdata( DaoObject *self, DaoType *type )
+{
+	DaoCstruct *p = DaoObject_CastCstruct( self, type );
+	if( p && p->type == DAO_CDATA ) return (DaoCdata*) p;
 	return NULL;
 }
 
@@ -331,7 +328,7 @@ int DaoObject_SetData( DaoObject *self, DString *name, DaoValue *data, DaoObject
 	DaoType *type;
 	DaoValue **value ;
 	DaoClass *klass = self->defClass;
-	DaoObject *dft = & klass->objType->value->xObject;
+	DaoObject *null = & klass->objType->value->xObject;
 	int child = othis && DaoObject_ChildOf( (DaoValue*)othis, (DaoValue*)self );
 	int id, st, up, pm, access;
 
@@ -344,8 +341,8 @@ int DaoObject_SetData( DaoObject *self, DString *name, DaoValue *data, DaoObject
 	st = LOOKUP_ST( node->value.pInt );
 	up = LOOKUP_UP( node->value.pInt );
 	id = LOOKUP_ID( node->value.pInt );
-	if( self == dft && st == DAO_OBJECT_VARIABLE ) return DAO_ERROR_FIELD_NOTPERMIT;
-	access = othis == self || pm == DAO_DATA_PUBLIC || (child && pm >= DAO_DATA_PROTECTED);
+	if( self == null && st == DAO_OBJECT_VARIABLE ) return DAO_ERROR_FIELD_NOTPERMIT;
+	access = othis == self || pm == DAO_PERM_PUBLIC || (child && pm >= DAO_PERM_PROTECTED);
 	if( access == 0 ) return DAO_ERROR_FIELD_NOTPERMIT;
 	if( st == DAO_OBJECT_VARIABLE ){
 		if( id <0 ) return DAO_ERROR_FIELD_NOTPERMIT;
@@ -367,7 +364,7 @@ int DaoObject_GetData( DaoObject *self, DString *name, DaoValue **data, DaoObjec
 	DNode *node;
 	DaoValue *p = NULL;
 	DaoClass *klass = self->defClass;
-	DaoObject *dft = & klass->objType->value->xObject;
+	DaoObject *null = & klass->objType->value->xObject;
 	int child = othis && DaoObject_ChildOf( (DaoValue*)othis, (DaoValue*)self );
 	int id, st, up, pm, access;
 
@@ -379,8 +376,8 @@ int DaoObject_GetData( DaoObject *self, DString *name, DaoValue **data, DaoObjec
 	st = LOOKUP_ST( node->value.pInt );
 	up = LOOKUP_UP( node->value.pInt );
 	id = LOOKUP_ID( node->value.pInt );
-	if( self == dft && st == DAO_OBJECT_VARIABLE ) return DAO_ERROR_FIELD_NOTPERMIT;
-	access = othis == self || pm == DAO_DATA_PUBLIC || (child && pm >= DAO_DATA_PROTECTED);
+	if( self == null && st == DAO_OBJECT_VARIABLE ) return DAO_ERROR_FIELD_NOTPERMIT;
+	access = othis == self || pm == DAO_PERM_PUBLIC || (child && pm >= DAO_PERM_PROTECTED);
 	if( access == 0 ) return DAO_ERROR_FIELD_NOTPERMIT;
 	switch( st ){
 	case DAO_OBJECT_VARIABLE : p = self->objValues[id]; break;
@@ -395,14 +392,14 @@ int DaoObject_GetData( DaoObject *self, DString *name, DaoValue **data, DaoObjec
 DaoValue* DaoObject_GetField( DaoObject *self, const char *name )
 {
 	DaoValue *res = NULL;
-	DString str = DString_WrapMBS( name );
+	DString str = DString_WrapChars( name );
 	DaoObject_GetData( self, & str, & res, self );
 	return res;
 }
 DaoRoutine* DaoObject_GetMethod( DaoObject *self, const char *name )
 {
 	DaoValue *V;
-	DString str = DString_WrapMBS( name );
+	DString str = DString_WrapChars( name );
 	int id = DaoClass_FindConst( self->defClass, & str );
 	if( id < 0 ) return NULL;
 	V = DaoClass_GetConst( self->defClass, id );

@@ -31,22 +31,6 @@ namely sub-strings that match that pattern.
 A number of operations can be performed on the resulting sub-strings,
 including extraction, replacing and splitting etc.
 
-@[comment]
-The internal representation (the patterns and searching algorithm) of a
-regex uses both MulitBytes Strings and Wide Charactor Strings,
-when a regex is applied to a MBS or a WCS, the corresponding representation
-is used to match the string. So to improve the regex matching efficiency,
-it\'s better to represent text in MBS with single quotation if most of the
-symbols can be encoded in single byte, and represent text in WCS with
-double quotation if most of the symbols require more than one byte to encode.
-@[comment]
-
-Starting from the latest release, the functionalities of regex
-can be accessed by string methods.
-The previous perl-style regex has been removed 
-(as a way to simplify the language and implementation).
-The syntax of the new regex is similar to that of Lua,
-but most of the character class names are different.
 
 
 @[subsection]Character Class@[subsection]
@@ -62,6 +46,7 @@ A character class is used to identify a set of characters.
 --@[green]%d@[green] : all digits;
 --@[green]%x@[green] : all hexadecimal digits;
 --@[green]%c@[green] : all lower case characters;
+--@[green]%e@[green] : all CJK (Chinese, Japanese, Korean) characters;
 --@[green]%w@[green] : all alphabetic characters, digists and character @[green]_@[green];
 --@[green]%A@[green] : non alphabetic characters, complement of @[green]%a@[green];
 --@[green]%S@[green] : non white space characters, complement of @[green]%s@[green];
@@ -70,6 +55,7 @@ A character class is used to identify a set of characters.
 --@[green]%D@[green] : non digits, complement of @[green]%d@[green];
 --@[green]%X@[green] : non hexadecimal digits, complement of @[green]%x@[green];
 --@[green]%C@[green] : upper case characters;
+--@[green]%E@[green] : non CJK (Chinese, Japanese, Korean) characters;
 --@[green]%W@[green] : complement of @[green]%w@[green];
 --@[green]%x@[green] : represents character @[green]x@[green], where @[green]x@[green] is
 any non-alphanumeric character; @[green]x@[green] may also be an alphabetic 
@@ -155,186 +141,173 @@ in strings, and passed to these string methods.
 Each pattern string corresponds to an internal representation of a regular expression,
 which are compiled from the pattern string at the first time it is used.
 Though the strings that represent the same pattern can be passed multiple times 
-to these methods, they are compiled once in one process (virtual machine process).
+to these methods, they are compiled only once in one process (virtual machine process).
 So the overhead of compiling a regular expression can be normally ignored.
 
 
 The following methods are provided:
-@[list]
---@[green]string.pfind()@[green]: see @[node]dao.type.string.pattern.pfind@[node];
---@[green]string.match()@[green]: see @[node]dao.type.string.pattern.match@[node];
---@[green]string.submatch()@[green]: see @[node]dao.type.string.pattern.submatch@[node];
---@[green]string.extract()@[green]: see @[node]dao.type.string.pattern.extract@[node];
---@[green]string.capture()@[green]: see @[node]dao.type.string.pattern.capture@[node];
---@[green]string.change()@[green]: see @[node]dao.type.string.pattern.change@[node];
---@[green]string.mpack()@[green]: see @[node]dao.type.string.pattern.mpack@[node];
-@[list]
-@[text]
-
-
-
-
-################################################################################
-################################################################################
-########
-######## Pattern Matching Methods
-########
-################################################################################
-################################################################################
-
-
-
-@[name]
-dao.type.string.pattern.pfind
-@[name]
-
-@[title]
-string.pfind()
-@[title]
-
-@[text]
-
 @[code]
-string.pfind( pt :string, index = 0, start = 0, end = 0 )=>list<tuple<start:int,end:int> >
+fetch( invar self: string, pattern: string, group = 0, start = 0, end = -1 )
+	=> string
+match( invar self: string, pattern: string, group = 0, start = 0, end = -1 )
+	=> tuple<start:int,end:int>|none
+change( invar self: string, pattern: string, target: string, index = 0, 
+	start = 0, end = -1 ) => string
+capture( invar self: string, pattern: string, start = 0, end = -1 ) => list<string>
+extract( invar self: string, pattern: string, 
+	mtype: enum<both,matched,unmatched> = $matched ) => list<string>
+scan( invar self: string, pattern: string, start = 0, end = -1 )
+	[start: int, end: int, state: enum<unmatched,matched> => none|@V]
+	=> list<@V>
 @[code]
 
-This method searches for the position(s) of substring(s) that match(es) to
-the pattern represented by @[cyan]pt@[cyan]. If @[cyan]index@[cyan] is greater than zero,
-search for the @[cyan]index@[cyan]-th occurrence of the matched substring,
-otherwise, search for all. The searching starts from position @[cyan]start@[cyan],
-and ends at @[cyan]end@[cyan] if it is greater than zero. Zero value for @[cyan]end@[cyan]
-indicates searching until the end of the string.
-@[text]
 
-
-@[name]
-dao.type.string.pattern.match
-@[name]
-
-@[title]
-string.match()
-@[title]
-
-@[text]
+@[subsubsection]
+fetch(invar self:string,pattern:string,group=0,start=0,end=-1)=>string
+@[subsubsection]
 @[code]
-string.match( pt :string, start=0, end=0, substring=1 ) => tuple<start:int,end:int,substring:string>
+fetch( invar self: string, pattern: string, group = 0, start = 0, end = -1 )
+	=> string
 @[code]
-Find a substring that matches to @[cyan]pt@[cyan], between starting position @[cyan]start@[cyan] 
-and ending position @[cyan]end@[cyan]. Also extract the matched subtring if parmeter
-@[cyan]substring@[cyan] is not zero.
-@[text]
+Fetch the substring that matches the "group"-th group of pattern "pattern".
+
+Only the region between "start" and "end" is searched.
+
+Negative index starts from the last byte of the string.
 
 
-@[name]
-dao.type.string.pattern.submatch
-@[name]
-
-@[title]
-string.submatch()
-@[title]
-
-@[text]
+Examples,
 @[code]
-string.submatch( pt :string, group :int, start=0, end=0 ) => tuple<start:int,end:int,substring:string>
-@[code]
-Find a substring that matches to @[cyan]pt@[cyan], between starting position @[cyan]start@[cyan] 
-and ending position @[cyan]end@[cyan], and extract the location of substring that matches 
-the pattern group as specified by @[cyan]group@[cyan].
-@[text]
-
-
-@[name]
-dao.type.string.pattern.extract
-@[name]
-
-@[title]
-string.extract()
-@[title]
-
-@[text]
-@[code]
-string.extract( 
-		pattern :string, 
-		mtype   :enum<both,matched,unmatched> = $matched,
-		mask    :tuple<pattern:string,reversed:enum<false,true>> = ('', $false)
-		) => list<string>
+S1 = "ABC123DEF456GHI"
+S2 = S1.fetch( "%d+" )          # S2 = "123"
+S3 = S1.fetch( "%d+(%a+)", 1 )  # S3 = "DEF"
+S4 = S1.fetch( "%d+", 0, 6 )    # S4 = "456"
 @[code]
 
-Depending on the value of @[cyan]mtype@[cyan], string.extract() returns all the subtrings
-that match to @[cyan]pattern@[cyan] if @[cyan]mtype@[cyan] is set to @[cyan]$matched@[cyan];
-or all the substrings of the unmatched parts if @[cyan]mtype@[cyan] is @[cyan]$unmatched@[cyan];
-or all the substrings of both the matched and unmatched parts
-if @[cyan]mtype@[cyan] is @[cyan]$all@[cyan].
 
-
-An additional parameter @[cyan]mask@[cyan] can be used to restrict the seaching
-of @[cyan]pattern@[cyan] within the substrings that match to @[cyan]mask.pattern@[cyan],
-if @[cyan]mask.reversed@[cyan] is set to @[cyan]$false@[cyan];
-otherwise, the searching will be restricted outside of @[cyan]mask.pattern@[cyan]-matched regions.
-@[text]
-
-
-@[name]
-dao.type.string.pattern.capture
-@[name]
-
-@[title]
-string.capture()
-@[title]
-
-@[text]
+@[subsubsection]
+match(invar self:string,pattern:string,group=0,start=0,end=-1)=>...
+@[subsubsection]
 @[code]
-string.capture( pt : string, start=0, end=0 )=>list<string>
+match( invar self: string, pattern: string, group = 0, start = 0, end = -1 )
+	=> tuple<start:int,end:int>|none
+@[code]
+Match part of this string to pattern "pattern".
+
+If matched, the indexes of the first and the last byte of the matched
+substring will be returned as a tuple. If not matched, "none" is returned.
+
+Parameter "start" and "end" have the same meaning as in string::fetch().
+
+
+Examples,
+@[code]
+S1 = "ABC123DEF(456)GHI"
+M2 = S1.match( "%d+" )          # M2 = (start=3,end=5); substring: "123"
+M3 = S1.match( "%b()" )         # M3 = (start=9,end=13); substring: "(456)"
+M4 = S1.match( "%b{}" )         # M4 = none;
+M5 = S1.match( "%d+(%a+)", 1 )  # M5 = (start=6,end=8); substring: "DEF"
 @[code]
 
-Search for a substring that matches to @[cyan]pt@[cyan],
-and capture the substrings that match to pattern groups.
-The captured substrings are returned as a list,
-where the i-th item is substring that matches to the i-th group.
-@[text]
 
-
-@[name]
-dao.type.string.pattern.change
-@[name]
-
-@[title]
-string.change()
-@[title]
-
-@[text]
+@[subsubsection]
+change(invar self:string,pat:string,tar:string,index=0,start=0,end=-1)=>string
+@[subsubsection]
 @[code]
-string.change( pt :string, s :string, index=0, start=0, end=0 ) => int
+change( invar self: string, pattern: string, target: string, index = 0, 
+	start = 0, end = -1 ) => string
+@[code]
+Change the part(s) of the string that match pattern "pattern" to "target".
+And return a new string.
+
+The target string "target" can contain back references from pattern "pattern".
+
+If "index" is zero, all matched parts are changed; otherwise, only
+the "index"-th match is changed.
+
+Parameter "start" and "end" have the same meaning as in string::fetch().
+
+
+Examples,
+@[code]
+S1 = "ABC123DEF456GHI"
+S2 = S.change( "%d+", ";" )          # S2 = "ABC;DEF;GHI"
+S3 = S.change( "(%d+)", "<%1>", 1 )  # S3 = "ABC<123>DEF456GHI"
 @[code]
 
-Replace the substrings that match to @[cyan]pt@[cyan] with string @[cyan]s@[cyan],
-which may contain reference to captured subtrings for groups,
-for example, if @[cyan]s = 'abc%1'@[cyan], it means replacing with a string
-	which is a concatenation of @[cyan]abc@[cyan] and the substring
-	that match to the first group of @[cyan]pt@[cyan].
 
-
-If @[cyan]index@[cyan] is positive, replace the @[cyan]index@[cyan]-th occurrence
-of the substring matching to @[cyan]pt@[cyan]. The substitution can also
-be restricted within a region starting from position @[cyan]start@[cyan]
-until position @[cyan]end@[cyan].
-
-
-The number of occurrence of substitution is returned.
-@[text]
-
-
-@[name]
-dao.type.string.pattern.mpack
-@[name]
-
-@[title]
-string.mpack()
-@[title]
-
-@[text]
+@[subsubsection]
+capture(invar self:string,pattern:string,start=0,end=-1)=>list<string>
+@[subsubsection]
 @[code]
-string.mpack( pt :string, s :string, index=0 ) => string
-string.mpack( pt :string, s :string, index :int, count :int ) => list<string>
+capture( invar self: string, pattern: string, start = 0, end = -1 ) => list<string>
 @[code]
+Match pattern "pattern" to the string, and capture all the substrings that
+match to each of the groups of "pattern". Return these substrings as a list,
+and in this list, the i-th string corresponds to the i-th pattern group.
+
+Note that the pattern groups are indexed starting from one,
+and zero index is reserved for the whole pattern.
+
+Parameter "start" and "end" have the same meaning as in string::fetch().
+
+
+Examples,
+@[code]
+S1 = "ABC123DEF456GHI"
+L1 = S1.capture( "%d+" )        # L1 = { "123" }
+L2 = S1.capture( "%d+ (%a+)" )  # L2 = { "123DEF", "DEF" }
+@[code]
+
+
+@[subsubsection]
+extract(invar self:string,pattern:string,mtype:enum<...>=$matched)=>...
+@[subsubsection]
+@[code]
+extract( invar self: string, pattern: string, 
+	mtype: enum<both,matched,unmatched> = $matched ) => list<string>
+@[code]
+Extract the substrings that match to, or are between the matched ones,
+or both, and return them as a list.
+
+
+Examples,
+@[code]
+S1 = "ABC123DEF456GHI"
+L1 = S1.extract( "%d+" )   # L1 = { "123", "456" }
+L2 = S2.extract( "%d+", $unmatched )  # L2 = { "ABC", "DEF", "GHI" }
+@[code]
+
+
+@[subsubsection]
+scan(invar self:string,pattern:string,start=0,end=-1)[...]=>list<@V>
+@[subsubsection]
+@[code]
+scan( invar self: string, pattern: string, start = 0, end = -1 )
+	[start: int, end: int, state: enum<unmatched,matched> => none|@V]
+	=> list<@V>
+@[code]
+Scan the string with pattern "pattern", and invoke the attached code
+section for each matched substring and substrings between matches.
+
+The start and end index as well as the state of matching or not matching
+can be passed to the code section.
+
+Parameter "start" and "end" have the same meaning as in string::fetch().
+
+
+Examples,
+@[code]
+S1 = "ABC123DEF"
+S1.scan( "%d+" ) { [start, end, state]
+	io.writeln( start, end, S1[start:end], state )
+}
+# Output:
+# 0 2 ABC $unmatched(0)
+# 3 5 123 $matched(1)
+# 6 8 DEF $unmatched(0)
+@[code]
+
+
 @[text]
+

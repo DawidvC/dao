@@ -17,19 +17,26 @@ bundle_main   = bundler.AddObjects( { "kernel/daoMain.c" } )
 bundle_script = bundler.AddObjects( { daovm_bundle + ".dar.c" } )
 
 bundle_main.AddDefinition( 'DAO_WITH_STATIC_MODULES' )
+bundle_script.AddIncludePath( "kernel" )
 
 bundle = bundler.AddExecutable( daovm_bundle, bundle_main, bundle_script )
 
 std.load( "FindDao.dao" )
 
 daovm = DaoMake::FindPackage( "Dao" )
-if( daovm ) bundle.UseStaticLibrary( daovm, "dao" )
+if( daovm != none ) bundle.UseStaticLibrary( daovm, "dao" )
 
 finders = io.read( daovm_bundle + ".dar.finders" )
 
 bundle_finders = finders.split( '\n' )
 
+cmd_dir = DaoMake::SourcePath()
+dao_dir = DaoMake::GetEnv( 'DAO_DIR' )
+home_dir = DaoMake::GetEnv( 'HOME' )
 for( finder in bundle_finders ){
+	finder.replace( '$(CMD_DIR)/', cmd_dir )
+	finder.replace( '$(DAO_DIR)/', dao_dir )
+	finder.replace( '$(HOME)/', home_dir )
 	fields = finder.capture( '^ ([^%t]+) %t ([^%t]+) $' )
 	if( fields.size() < 3 ) skip;
 	if( DaoMake::IsFile( fields[2] ) ) std.load( fields[2] )

@@ -1,0 +1,13 @@
+
+if( DaoMake::IsPlatform( "UNIX" ) ){
+	cflags = DaoMake::Shell( "sdl2-config --cflags" )
+	lflags = DaoMake::Shell( "sdl2-config --ldflags" )
+	libs = DaoMake::Shell( "sdl2-config --libs" )
+	stlibs = DaoMake::Shell( "sdl2-config --static-libs" )
+	if( stlibs == "" ) return;
+
+	sdl = DaoMake::Project( "SDL" )
+	sdl.AddSharedLibrary( "" )
+	sdl.AddCompilingFlag( cflags.chop() )
+	sdl.AddLinkingFlag( lflags.chop() + " " + libs.chop() )
+}

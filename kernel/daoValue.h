@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,15 +14,16 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #ifndef DAO_VALUE_H
@@ -41,14 +42,14 @@
 
 struct DaoConstant
 {
-	DAO_DATA_COMMON;
+	DAO_VALUE_COMMON;
 
 	DaoValue *value;
 };
 
 struct DaoVariable
 {
-	DAO_DATA_COMMON;
+	DAO_VALUE_COMMON;
 
 	DaoValue *value;
 	DaoType  *dtype;
@@ -62,6 +63,7 @@ DAO_DLL void DaoVariable_Delete( DaoVariable *self );
 
 DAO_DLL void DaoConstant_Set( DaoConstant *self, DaoValue *value );
 DAO_DLL int  DaoVariable_Set( DaoVariable *self, DaoValue *value, DaoType *type );
+DAO_DLL void DaoVariable_SetType( DaoVariable *self, DaoType *type );
 
 
 
@@ -72,9 +74,7 @@ union DaoValue
 	DaoNone        xNone;
 	DaoInteger     xInteger;
 	DaoFloat       xFloat;
-	DaoDouble      xDouble;
 	DaoComplex     xComplex;
-	DaoLong        xLong;
 	DaoString      xString;
 	DaoEnum        xEnum;
 	DaoArray       xArray;
@@ -109,29 +109,31 @@ union DaoValue
 	} xGC;
 };
 
-/* Copy when self is a simple data type (with type <= DAO_ENUM),
- * or it is a constant array, list, map or tuple. */
+/*
+// Copy when self is a simple data type (with type <= DAO_ENUM),
+// or it is a constant array, list, map or tuple.
+*/
 DAO_DLL DaoValue* DaoValue_SimpleCopy( DaoValue *self );
 DAO_DLL DaoValue* DaoValue_SimpleCopyWithType( DaoValue *self, DaoType *type );
+DAO_DLL DaoValue* DaoValue_CopyContainer( DaoValue *self, DaoType *tp );
 
 DAO_DLL void DaoValue_Clear( DaoValue **self );
 
 DAO_DLL int DaoValue_Compare( DaoValue *left, DaoValue *right );
-DAO_DLL int DaoValue_Compare2( DaoValue *left, DaoValue *right );
 
+DAO_DLL void DaoValue_Assign( DaoValue *src, DaoValue **dest );
 DAO_DLL void DaoValue_Copy( DaoValue *src, DaoValue **dest );
+DAO_DLL void DaoValue_CopyX( DaoValue *src, DaoValue **dest, DaoType *cst );
 DAO_DLL int DaoValue_Move( DaoValue *src, DaoValue **dest, DaoType *destype );
 DAO_DLL int DaoValue_Move2( DaoValue *src, DaoValue **dest, DaoType *destype, DMap *defs );
-DAO_DLL void DaoValue_SimpleMove( DaoValue *src, DaoValue **dest );
 
+DAO_DLL void DaoValue_SetType( DaoValue *to, DaoType *tp );
 DAO_DLL void DaoValue_MarkConst( DaoValue *self );
 
 DAO_DLL int DaoValue_IsZero( DaoValue *self );
-DAO_DLL daoint DaoValue_GetInteger( DaoValue *self );
-DAO_DLL float  DaoValue_GetFloat( DaoValue *self );
-DAO_DLL double DaoValue_GetDouble( DaoValue *self );
-DAO_DLL complex16 DaoValue_GetComplex( DaoValue *self );
-DAO_DLL DLong* DaoValue_GetLong( DaoValue *self, DLong *lng );
+DAO_DLL dao_integer DaoValue_GetInteger( DaoValue *self );
+DAO_DLL dao_float   DaoValue_GetFloat( DaoValue *self );
+DAO_DLL dao_complex DaoValue_GetComplex( DaoValue *self );
 DAO_DLL DString* DaoValue_GetString( DaoValue *self, DString *str );
 
 DAO_DLL int DaoValue_IsNumber( DaoValue *self );

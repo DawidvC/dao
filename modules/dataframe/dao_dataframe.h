@@ -45,9 +45,13 @@ enum DaoxDataFrameDims
 
 struct DaoxDataColumn
 {
-	DaoType  *type;   // type of the cells;
-	DVector  *cells;  // DVector<daoint|float|double|complex|DString | DaoValue* >
+	DAO_CSTRUCT_COMMON;
+
+	DaoType  *vatype;  // type of the cells;
+	DArray   *cells;   // DArray<daoint|float|double|complex|DString | DaoValue* >
 };
+
+DAO_DLL DaoType *daox_type_datacolumn;
 
 DAO_DLL DaoxDataColumn* DaoxDataColumn_New( DaoType *type );
 DAO_DLL void DaoxDataColumn_Delete( DaoxDataColumn *self );
@@ -66,12 +70,12 @@ struct DaoxDataFrame
 
 	daoint   dims[3];    // number of rows;
 	uint_t   groups[3];  // active label group for each dim;
-	DArray  *labels[3];  // DArray<DMap<DString*>*>
-	DArray  *columns;    // DArray<DaoxDataColumn*>
-	DArray  *caches;     // DArray<DaoxDataColumn*>
+	DList   *labels[3];  // DList<DMap<DString*>*>
+	DList   *columns;    // DList<DaoxDataColumn*>
+	DList   *caches;     // DList<DaoxDataColumn*>
 
 	DaoxDataFrame  *original;  // the original dataframe;
-	DArray         *slices;    // DArray<DVector<daoint>*>
+	DArray         *slices;    // see comments in daoNumtype.h;
 };
 
 DAO_DLL DaoType *daox_type_dataframe;

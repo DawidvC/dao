@@ -19,11 +19,11 @@ daovm = DaoMake::Project( "Dao" )
 ###########################################################################
 
 daovm_root_path = DaoMake::Option( "INSTALL-PATH", "/usr/local" )
-daovm_bin_path = DaoMake::Option( "BIN-PATH", daovm_root_path + "/bin" )
-daovm_lib_path = DaoMake::Option( "LIB-PATH", daovm_root_path + "/lib" )
-daovm_inc_path = DaoMake::Option( "INC-PATH", daovm_root_path + "/include/dao" )
-daovm_mod_path = DaoMake::Option( "MOD-PATH", daovm_root_path + "/lib/dao/modules" )
-daovm_doc_path = DaoMake::Option( "DOC-PATH", daovm_root_path + "/shared/dao" )
+daovm_bin_path = DaoMake::Option( "BIN-PATH", DaoMake::MakePath( daovm_root_path, "bin" ) )
+daovm_lib_path = DaoMake::Option( "LIB-PATH", DaoMake::MakePath( daovm_root_path, "lib" ) )
+daovm_inc_path = DaoMake::Option( "INC-PATH", DaoMake::MakePath( daovm_root_path, "include/dao" ) )
+daovm_mod_path = DaoMake::Option( "MOD-PATH", DaoMake::MakePath( daovm_root_path, "lib/dao/modules" ) )
+daovm_doc_path = DaoMake::Option( "DOC-PATH", DaoMake::MakePath( daovm_root_path, "share/dao" ) )
 
 
 #
@@ -34,6 +34,7 @@ daovm_doc_path = DaoMake::Option( "DOC-PATH", daovm_root_path + "/shared/dao" )
 daovm.ExportPath( "INSTALL-PATH", daovm_root_path );
 daovm.ExportPath( "BIN-PATH", daovm_bin_path );
 daovm.ExportPath( "LIB-PATH", daovm_lib_path );
+daovm.ExportPath( "INC-PATH", daovm_inc_path );
 daovm.ExportPath( "MOD-PATH", daovm_mod_path );
 daovm.ExportPath( "DOC-PATH", daovm_doc_path );
 
@@ -45,25 +46,25 @@ daovm.ExportPath( "DOC-PATH", daovm_doc_path );
 #
 ###########################################################################
 
-daovm_with_macro      = DaoMake::Option( "MACRO",      $ON )
-daovm_with_regex      = DaoMake::Option( "REGEX",      $ON )
-daovm_with_longint    = DaoMake::Option( "LONGINT",    $ON )
 daovm_with_numarray   = DaoMake::Option( "NUMARRAY",   $ON )
-daovm_with_dynclass   = DaoMake::Option( "DYNCLASS",   $ON )
 daovm_with_decorator  = DaoMake::Option( "DECORATOR",  $ON )
 daovm_with_thread     = DaoMake::Option( "THREAD",     $ON )
 daovm_with_concurrent = DaoMake::Option( "CONCURRENT", $ON )
 
 daovm_with_readline   = DaoMake::Option( "READLINE",   $ON )
 
-daovm_make_javascript = DaoMake::Option( "JAVASCRIPT", $OFF )
-
 daovm_bundle_program   = DaoMake::Option( "BUNDLE-SCRIPT", "" )
 daovm_bundle_resources = DaoMake::Option( "BUNDLE-RESOURCES", "" )
 
 daovm_full_static = DaoMake::Option( "FULL-STATIC", $OFF )
 
-if( DaoMake::IsMinix() or daovm_make_javascript == $ON ) daovm_with_thread = $OFF;
+daovm_use_gc_logger  = DaoMake::Option( "GC-LOGGER", $OFF )
+daovm_use_code_state = DaoMake::Option( "CODE-STATE", $OFF )
+
+daovm_use_help_path = DaoMake::Option( "HELP-PATH", "." )
+daovm_use_help_font = DaoMake::Option( "HELP-FONT", "monospace" )
+
+if( DaoMake::IsPlatform( "MINIX" ) ) daovm_with_thread = $OFF;
 if( daovm_full_static == $ON ){
 	daovm_with_thread = $OFF;
 	daovm_with_readline = $OFF;
@@ -78,14 +79,15 @@ if( daovm_with_thread == $OFF ) daovm_with_concurrent = $OFF;
 #
 ###########################################################################
 
-if( daovm_with_macro      == $ON ) daovm.AddDefinition( "DAO_WITH_MACRO" )
-if( daovm_with_regex      == $ON ) daovm.AddDefinition( "DAO_WITH_REGEX" )
-if( daovm_with_longint    == $ON ) daovm.AddDefinition( "DAO_WITH_LONGINT" )
 if( daovm_with_numarray   == $ON ) daovm.AddDefinition( "DAO_WITH_NUMARRAY" )
-if( daovm_with_dynclass   == $ON ) daovm.AddDefinition( "DAO_WITH_DYNCLASS" )
 if( daovm_with_decorator  == $ON ) daovm.AddDefinition( "DAO_WITH_DECORATOR" )
 if( daovm_with_thread     == $ON ) daovm.AddDefinition( "DAO_WITH_THREAD" )
 if( daovm_with_concurrent == $ON ) daovm.AddDefinition( "DAO_WITH_CONCURRENT" )
+if( daovm_use_gc_logger  == $ON ) daovm.AddDefinition( "DAO_USE_GC_LOGGER" );
+if( daovm_use_code_state == $ON ) daovm.AddDefinition( "DAO_USE_CODE_STATE" );
+
+changeset = io.read( DaoMake::MakePath( DaoMake::SourcePath(), "manifest.uuid" ), 1 )
+if( % changeset ) daovm.AddDefinition( "CHANGESET_ID", "\\\"FOS." + changeset[:11] + "\\\"" )
 
 
 ###########################################################################
@@ -97,13 +99,12 @@ if( daovm_with_concurrent == $ON ) daovm.AddDefinition( "DAO_WITH_CONCURRENT" )
 daovm_kernel_headers =
 {
 	"kernel/dao.h" ,
-	"kernel/daoArray.h" ,
 	"kernel/daoBase.h" ,
 	"kernel/daoClass.h" ,
 	"kernel/daoConst.h" ,
 	"kernel/daoGC.h" ,
 	"kernel/daoLexer.h" ,
-	"kernel/daoMacro.h" ,
+	"kernel/daoList.h" ,
 	"kernel/daoMap.h" ,
 	"kernel/daoNamespace.h" ,
 	"kernel/daoNumtype.h" ,
@@ -114,7 +115,7 @@ daovm_kernel_headers =
 	"kernel/daoProcess.h" ,
 	"kernel/daoRegex.h" ,
 	"kernel/daoRoutine.h" ,
-	"kernel/daoSched.h" ,
+	"kernel/daoTasklet.h" ,
 	"kernel/daoStdlib.h" ,
 	"kernel/daoStdtype.h" ,
 	"kernel/daoStream.h" ,
@@ -129,12 +130,11 @@ daovm_kernel_headers =
 
 daovm_kernel_sources =
 {
-	"kernel/daoArray.c" ,
 	"kernel/daoClass.c" ,
 	"kernel/daoConst.c" ,
 	"kernel/daoGC.c" ,
 	"kernel/daoLexer.c" ,
-	"kernel/daoMacro.c" ,
+	"kernel/daoList.c" ,
 	"kernel/daoMap.c" ,
 	"kernel/daoNamespace.c" ,
 	"kernel/daoNumtype.c" ,
@@ -142,18 +142,18 @@ daovm_kernel_sources =
 	"kernel/daoParser.c" ,
 	"kernel/daoBytecode.c" ,
 	"kernel/daoOptimizer.c" ,
-	"kernel/daoProcess.c" ,
-	"kernel/daoRegex.c" ,
 	"kernel/daoRoutine.c" ,
-	"kernel/daoSched.c" ,
+	"kernel/daoProcess.c" ,
+	"kernel/daoValue.c" ,
+	"kernel/daoType.c" ,
+	"kernel/daoRegex.c" ,
+	"kernel/daoTasklet.c" ,
 	"kernel/daoStdlib.c" ,
 	"kernel/daoStdtype.c" ,
 	"kernel/daoStream.c" ,
 	"kernel/daoString.c" ,
 	"kernel/daoThread.c" ,
 	"kernel/daoPlatforms.c" ,
-	"kernel/daoType.c" ,
-	"kernel/daoValue.c" ,
 	"kernel/daoVmcode.c" ,
 	"kernel/daoVmspace.c" 
 }
@@ -191,6 +191,15 @@ daovm_lib = daovm.AddStaticLibrary( "dao", daovm_kernel_objects )
 #
 daovm_exe = daovm.AddExecutable( "dao", daovm_main_object )
 
+if( DaoMake::IsPlatform( "WIN32" ) ){
+	daovm_dll.SetTargetPath( "bin" )  # Relative to build path;
+	daovm_lib.SetTargetPath( "bin" )
+}else{
+	daovm_dll.SetTargetPath( "lib" )
+	daovm_lib.SetTargetPath( "lib" )
+}
+daovm_exe.SetTargetPath( "bin" )
+
 daovm.AddIncludePath( "kernel" )
 
 
@@ -200,10 +209,17 @@ daovm.AddIncludePath( "kernel" )
 # so that some linking flags can be generated properly:
 #
 ###########################################################################
+daomake_pkg_path = DaoMake::MakePath( daovm.GetPath( "INSTALL-PATH" ), "lib/daomake/packages/" )
+daovm.ExportPath( "FINDER-PATH", daomake_pkg_path );
 daovm.Install( daovm_bin_path, daovm_exe )
 daovm.Install( daovm_lib_path, daovm_dll, daovm_lib )
 daovm.Install( daovm_inc_path, daovm_kernel_headers )
-daovm.Install( daovm.GetPath( "INSTALL-PATH" ) + "shared/daomake/packages/", "FindDao.dao" );
+daovm.Install( daomake_pkg_path, daovm.MakeBuildPath( "FindDao.dao" ) );
+
+
+daomake_pkg_local = daovm.MakeBuildPath( "lib/daomake/packages/" )
+finder = daovm.AddCommand( "finder", "$(DAOMAKE) mkdir3 " + daomake_pkg_local )
+finder.AddCommand( "$(DAOMAKE) copy " + daovm.MakeBuildPath( "FindDao.dao" ) + " " + daomake_pkg_local )
 
 
 
@@ -213,10 +229,11 @@ daovm_partial_static = DaoMake::Option( "STATIC", $OFF );
 # Do not build statically linked executable on Windows, because the modules
 # must link against dao.dll, so the executable should also link against it.
 #
-if( DaoMake::IsWin32() ) daovm_partial_static = $OFF;
+if( DaoMake::IsPlatform( "WIN32" ) ) daovm_partial_static = $OFF;
 
 
 if( daovm_partial_static == $ON ){
+	daovm_main_object.AddDefinition( "DAO_KERNEL" );
 	daovm_exe.AddObjects( daovm_kernel_objects );
 }else{
 	daovm_exe.UseSharedLibrary( daovm, "dao" )
@@ -231,23 +248,19 @@ if( daovm_partial_static == $ON ){
 #
 ###########################################################################
 
-if( DaoMake::IsUnix() ){
-	daovm.AddDefinition( "UNIX" )
-	if( DaoMake::IsMacOSX() ) daovm.AddDefinition( "MAC_OSX" )
+daovm.AddPlatformDefs();
+
+if( DaoMake::IsPlatform( "UNIX" ) ){
 	daovm.AddCompilingFlag( "-fPIC" )
 	daovm.AddLinkingFlag( "-lm" )
-	if( DaoMake::IsLinux() ) daovm.AddLinkingFlag( "-ldl" )
+	if( DaoMake::IsPlatform( "LINUX" ) ) daovm.AddLinkingFlag( "-ldl" )
 	if( daovm_with_thread == $ON ) daovm.AddLinkingFlag( "-lpthread" )
-}else if( DaoMake::IsWin32() ){
-	daovm.AddDefinition( "WIN32" )
-	if( DaoMake::IsMinGW() ) daovm.AddLinkingFlag( "-lwinmm" )
-}else if( DaoMake::IsHaiku() ){
-	daovm.AddDefinition( "UNIX" )
-	# Note:
-	# pthread is automatically linked as part of:
-	# /Haiku/develop/lib/x86/libroot.so.
+}else if( DaoMake::IsPlatform( "MINGW" ) ){
+	daovm.AddLinkingFlag( "-lwinmm" )
 }
-
+# Note for Haiku:
+# pthread is automatically linked as part of:
+# /Haiku/develop/lib/x86/libroot.so.
 
 
 if( daovm_with_readline == $ON ){
@@ -261,11 +274,11 @@ if( daovm_with_readline == $ON ){
 	# the following subdirectories:
 	# 1. "packages", relative to the daomake execution directory;
 	# 2. "packages", relative to the daomake executable directory;
-	# 3. Unix only: "../shared/daomake/packages", relative to the 
+	# 3. Unix only: "../lib/daomake/packages", relative to the 
 	#    daomake executable directory;
 	#
 	readline = DaoMake::FindPackage( "ReadLine" )
-	if( readline ){
+	if( readline != none ){
 		#
 		# The definition passed only to the compiling flags for compiling
 		# "daovm_main_object".
@@ -287,27 +300,42 @@ if( daovm_with_readline == $ON ){
 #
 ###########################################################################
 
+debugger = daovm.AddDirectory( "debugger", "modules/debugger" );
+profiler = daovm.AddDirectory( "profiler", "modules/profiler" );
 auxlib = daovm.AddDirectory( "auxlib", "modules/auxlib" )
 syslib = daovm.AddDirectory( "syslib", "modules/syslib" )
 help = daovm.AddDirectory( "help", "modules/help" )
 math = daovm.AddDirectory( "math", "modules/math" )
 meta = daovm.AddDirectory( "meta", "modules/meta" )
+macro = daovm.AddDirectory( "macro", "modules/macro" )
+bigint = daovm.AddDirectory( "bigint", "modules/bigint" )
+coroutine = daovm.AddDirectory( "coroutine", "modules/coroutine" )
+protobject = daovm.AddDirectory( "protobject", "modules/protobject" )
 serializer = daovm.AddDirectory( "serializer", "modules/serializer" )
 dataframe = daovm.AddDirectory( "dataframe", "modules/dataframe" )
 
 daomake = daovm.AddDirectory( "daomake", "tools/daomake" )
 daotest = daovm.AddDirectory( "daotest", "tools/daotest" )
-modules = daovm.AddDirectory( "modules", "modules" )
+
 
 if( DaoMake::IsDir( "tools/clangdao" ) ) daovm.AddDirectory( "clangdao", "tools/clangdao" );
 
+modules = daovm.AddDirectory( "modules", "modules" )
+
+
 
 # Add dependencies:
+debugger.AddDependency( daovm_dll )
+profiler.AddDependency( daovm_dll )
 auxlib.AddDependency( daovm_dll )
 syslib.AddDependency( daovm_dll )
 help.AddDependency( daovm_dll )
 math.AddDependency( daovm_dll )
+macro.AddDependency( daovm_dll )
+bigint.AddDependency( daovm_dll )
 meta.AddDependency( daovm_dll )
+coroutine.AddDependency( daovm_dll )
+protobject.AddDependency( daovm_dll )
 serializer.AddDependency( daovm_dll )
 dataframe.AddDependency( daovm_dll )
 
@@ -316,8 +344,77 @@ modules.AddDependency( daovm_lib )
 modules.AddDependency( daovm_exe )
 
 
+daocmd = DaoMake::MakePath( daovm.BinaryPath(), "bin/dao" )
+testcmd = DaoMake::MakePath( daovm.BinaryPath(), "bin/daotest" )
+if( DaoMake::UseLocalRPath() == 0 ){
+	ldpath = daovm_lib.MakeBuildPath( "lib" )
+	daocmd = "LD_LIBRARY_PATH=" + ldpath + " " + daocmd
+	testcmd = "LD_LIBRARY_PATH=" + ldpath + " " + testcmd
+}
 
-DaoMake::SetTestTool( DaoMake::BinaryPath() + "/daotest" )
+daovm.AddVariable( "DAO", daocmd );
+daovm.AddVariable( "HELP_PATH", daovm_use_help_path );
+daovm.AddVariable( "HELP_FONT", daovm_use_help_font );
+
+# Add shell commands as a target:
+# Generate documentations here instead of inside modules/help,
+# as it might be problematic to use relative path in windows to invoke Dao.
+daovm_doc = daovm.AddCommand( "./doc/html/en/index.html: Makefile" + DaoMake::MakefileSuffix(), "@$(DAOMAKE) mkdir2 ./doc/" );
+daovm_doc.AddCommand( "@$(DAOMAKE) mkdir2 ./doc/html/" );
+daovm_doc.AddCommand( "@$(DAOMAKE) mkdir2 ./doc/html/en" );
+daovm_doc.AddCommand( "@$(DAOMAKE) mkdir2 ./doc/html/zh" );
+daovm_doc.AddCommand( @[]$(DAO) --path="$(HELP_PATH)" -e "load help; help::set_language('en'); help::set_font('$(HELP_FONT)'); help::export('','./doc/html/en')"@[] );
+daovm_doc.AddCommand( @[]$(DAO) --path="$(HELP_PATH)" -e "load help; help::set_language('zh'); help::set_font('$(HELP_FONT)'); help::export('','./doc/html/zh')"@[] );
+daovm_doc.AddDependency( daovm_dll );
+
+daovm.Install( daovm_doc_path, DaoMake::MakePath( daovm.BinaryPath(), "./doc" ) )
+
+demos = {
+	"demo/arrays.dao",
+	"demo/aspects.dao",
+	"demo/class_forward_claration.dao",
+	"demo/class_inheritance.dao",
+	"demo/classes.dao",
+	"demo/closures.dao",
+	"demo/decorators.dao",
+	"demo/defers.dao",
+	"demo/disjoint_union.dao",
+	"demo/enums.dao",
+	"demo/hello.dao",
+	"demo/interface.dao",
+	"demo/interface_forward_declaration.dao",
+	"demo/lists.dao",
+	"demo/macros.dao",
+	"demo/maps.dao",
+	"demo/mixins.dao",
+	"demo/numbers.dao",
+	"demo/object_operator.dao",
+	"demo/errors.dao",
+	"demo/routines.dao",
+	"demo/strings.dao",
+	"demo/tuples.dao",
+	"demo/user_functional.dao",
+	"demo/user_type_casting.dao",
+	"demo/verbatim.dao"
+}
+demos2 = {
+	"demo/concurrent/async_object.dao",
+	"demo/concurrent/channel_block.dao",
+	"demo/concurrent/channel_class.dao",
+	"demo/concurrent/critical.dao",
+	"demo/concurrent/future.dao",
+	"demo/concurrent/parallel_quicksort.dao",
+	"demo/concurrent/select_builtin.dao",
+	"demo/concurrent/select_custom.dao",
+	"demo/concurrent/select_mix.dao",
+	"demo/concurrent/start.dao"
+}
+
+daovm.Install( DaoMake::MakePath( daovm_doc_path, "./demo" ), demos )
+daovm.Install( DaoMake::MakePath( daovm_doc_path, "./demo/concurrent" ), demos2 )
+
+
+DaoMake::SetTestTool( testcmd )
 tests = daovm.AddDirectory( "tests", "tests" )
 tests.AddDependency( modules )
 tests.AddDependency( daotest )
@@ -333,35 +430,17 @@ daovm.GenerateFinder( $TRUE );
 ###########################################################################
 
 if( daovm_bundle_program.size() ){
-	darc = daovm_bundle_program + '.dar.c'
-	daomake_args  = '--platform ' + DaoMake::Platform();
-	daomake_args += ' --option-BUNDLE ' + daovm_bundle_program
-	daomake_args += ' --suffix .bundle bundle.dao'
+	mode = ((string) DaoMake::BuildMode())[1:].convert( $lower )
+	daos = daovm_bundle_program + ".dao"
+	darc = daovm_bundle_program + ".dar.c"
+	daomake_args  = "--platform " + DaoMake::Platform() + " --mode " + mode;
+	daomake_args += " --option-BUNDLE " + daovm_bundle_program
+	daomake_args += " --suffix .bundle bundle.dao"
 
-	archive = daovm.AddCommand( darc, './dao -c ' + daovm_bundle_program + '.dao' )
-	archive.AddCommand( './dao -a ' + daovm_bundle_program + '.dac' + daovm_bundle_resources )
-	archive.AddCommand( './dao tools/filetools/archive.dao ' + daovm_bundle_program + '.dar' )
-	archive.AddCommand( '$(DAOMAKE) ' + daomake_args )
-	archive.AddCommand( '$(MAKE) -f Makefile.bundle' )
+	archive = daovm.AddCommand( darc + ": " + daos, "$(DAO) -c " + daos )
+	archive.AddCommand( "$(DAO) -a " + daovm_bundle_program + ".dac " + daovm_bundle_resources )
+	archive.AddCommand( "$(DAO) tools/filetools/archive.dao " + daovm_bundle_program + ".dar" )
+	archive.AddCommand( "$(DAOMAKE) " + daomake_args )
+	archive.AddCommand( "$(MAKE) -f Makefile.bundle" )
 }
 
-
-###########################################################################
-#
-# Add an javascript target:
-#
-###########################################################################
-if( daovm_make_javascript == $ON ){
-	ems_export  = @[]"['_DaoInit','_DaoQuit',@[]
-	ems_export += @[]'_DaoVmSpace_Eval','_DaoVmSpace_StdioStream',@[]
-	ems_export += @[]'_DaoStream_WriteMBS']"@[]
-	daovm_js_main = daovm.AddObjects( { "kernel/daoMain.c" }, daovm_kernel_headers );
-	daovm_js = daovm.AddJavaScriptLibrary( "dao", daovm_kernel_objects, daovm_js_main )
-	daovm_js.AddDefinition( "DAO_WITHOUT_DLL" )
-	daovm_js.AddDefinition( "DAO_MBSTRING_ONLY" )
-	daovm_js.AddDefinition( "WITHOUT_WCTYPE_H" )
-	daovm_js.AddDefinition( "WITHOUT_DIRECT_THREADING" )
-	daovm_js.AddLinkingFlag( "-s EXPORTED_FUNCTIONS=" + ems_export )
-	#daovm_js.AddLinkingFlag( "-s ASM_JS=1" )
-	if( DaoMake::BuildMode() == $RELEASE ) daovm_js.AddLinkingFlag( "-O2 --closure 1" )
-}

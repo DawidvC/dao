@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,15 +14,16 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include<string.h>
@@ -37,13 +38,11 @@
 #include"daoObject.h"
 #include"daoClass.h"
 #include"daoValue.h"
-#include"daoSched.h"
+#include"daoTasklet.h"
 
 #ifdef DAO_WITH_THREAD
 /* Basic threading interfaces */
 
-static void DSema_SetValue( DSema *self, int n );
-static int  DSema_GetValue( DSema *self );
 
 static void DThread_Detach( DThread *self );
 static void DThread_Cancel( DThread *self );
@@ -115,33 +114,6 @@ void DCondVar_BroadCast( DCondVar *self )
 	pthread_cond_broadcast( & self->myCondVar );
 }
 
-void DSema_Init( DSema *self, int n )
-{
-	sem_init( & self->mySema, 0, n );
-}
-void DSema_Destroy( DSema *self )
-{
-	sem_destroy( & self->mySema );
-}
-void DSema_Wait( DSema *self )
-{
-	sem_wait( & self->mySema );
-}
-void DSema_Post( DSema *self )
-{
-	sem_post( & self->mySema );
-}
-
-void DSema_SetValue( DSema *self, int n )
-{
-	sem_init( & self->mySema, 0, n );
-}
-int  DSema_GetValue( DSema *self )
-{
-	int n;
-	sem_getvalue( & self->mySema, & n );
-	return n;
-}
 
 void DThread_Init( DThread *self )
 {
@@ -157,8 +129,9 @@ void DThread_Destroy( DThread *self )
 	DCondVar_Destroy( & self->condv );
 }
 
-void DThread_Wrapper( DThread *self )
+static void* DThread_Wrapper( void *p )
 {
+	DThread *self = (DThread*) p;
 	if( self->thdSpecData == NULL ){
 		self->thdSpecData = (DThreadData*)dao_calloc( 1, sizeof(DThreadData) );
 		self->thdSpecData->thdObject = self;
@@ -174,25 +147,17 @@ void DThread_Wrapper( DThread *self )
 		if( self->taskFunc ) self->taskFunc( self->taskArg );
 	}
 	pthread_exit( 0 );
+	return NULL;
 }
-
-typedef void* (*DThreadCast)(void*);
 
 int DThread_Start( DThread *self, DThreadTask task, void *arg )
 {
-	pthread_attr_t tattr;
-	/*
-	   daoint stacksize = 0;
-	   int ret;
-	   ret = pthread_attr_getstacksize(&tattr, &stacksize);
-	 */
+	pthread_attr_t att;
 
 	self->taskFunc = task;
 	self->taskArg = arg;
-	pthread_attr_init(&tattr);
-	pthread_attr_setstacksize(&tattr, 0xffff);
-	return ( 0 == pthread_create( & self->myThread, &tattr,
-				(DThreadCast) &DThread_Wrapper, (void*)self ) );
+	if( pthread_attr_init( & att ) ) return 0;
+	return pthread_create( & self->myThread, & att, & DThread_Wrapper, (void*)self ) == 0;
 }
 void DThread_Join( DThread *self )
 {
@@ -262,14 +227,14 @@ int DMutex_TryLock( DMutex *self )
 
 void DCondVar_Init( DCondVar *self )
 {
-	self->thdWaiting = DArray_New(0);
+	self->thdWaiting = DList_New(0);
 	DMutex_Init( & self->thdMutex );
 	/* manual reset, when signaled, all waiting threads will be waked up: */
 	self->myCondVar = CreateEvent( NULL, TRUE, FALSE, NULL );
 }
 void DCondVar_Destroy( DCondVar *self )
 {
-	DArray_Delete( self->thdWaiting );
+	DList_Delete( self->thdWaiting );
 	DMutex_Destroy( & self->thdMutex );
 	CloseHandle( self->myCondVar );
 }
@@ -279,7 +244,7 @@ void DCondVar_Wait( DCondVar *self, DMutex *mtx )
 	DThreadData *p = (DThreadData*)TlsGetValue( thdSpecKey );
 
 	DMutex_Lock( & self->thdMutex );
-	DArray_PushBack( self->thdWaiting, (void*) p->thdObject );
+	DList_PushBack( self->thdWaiting, (void*) p->thdObject );
 	DMutex_Unlock( & self->thdMutex );
 
 	if( mtx ) DMutex_Unlock( mtx );
@@ -295,7 +260,7 @@ int DCondVar_TimedWait( DCondVar *self, DMutex *mtx, double seconds )
 	DThreadData *p = (DThreadData*)TlsGetValue( thdSpecKey );
 
 	DMutex_Lock( & self->thdMutex );
-	DArray_PushBack( self->thdWaiting, (void*) p->thdObject );
+	DList_PushBack( self->thdWaiting, (void*) p->thdObject );
 	DMutex_Unlock( & self->thdMutex );
 
 	if( mtx ) DMutex_Unlock( mtx );
@@ -313,7 +278,7 @@ void DCondVar_Signal( DCondVar *self )
 	if( self->thdWaiting->size > 0 ){
 		thread = (DThread*) self->thdWaiting->items.pVoid[0];
 		SetEvent( thread->condv.myCondVar );
-		DArray_PopFront( self->thdWaiting );
+		DList_PopFront( self->thdWaiting );
 	}
 	DMutex_Unlock( & self->thdMutex );
 
@@ -327,39 +292,10 @@ void DCondVar_BroadCast( DCondVar *self )
 		thread = (DThread*) self->thdWaiting->items.pVoid[i];
 		SetEvent( thread->condv.myCondVar );
 	}
-	DArray_Clear( self->thdWaiting );
+	DList_Clear( self->thdWaiting );
 	DMutex_Unlock( & self->thdMutex );
 }
 
-void DSema_Init( DSema *self, int n )
-{
-	self->mySema = CreateSemaphore( NULL, n, n, NULL );
-	self->count = n;
-}
-void DSema_Destroy( DSema *self )
-{
-	CloseHandle( self->mySema );
-}
-void DSema_Wait( DSema *self )
-{
-	WaitForSingleObject ( self->mySema, INFINITE );
-	self->count --;
-}
-void DSema_Post( DSema *self )
-{
-	ReleaseSemaphore( self->mySema, 1, NULL );
-	self->count ++;
-}
-int DSema_GetValue( DSema *self )
-{
-	return self->count;
-}
-void DSema_SetValue( DSema *self, int n )
-{
-	CloseHandle( self->mySema );
-	self->mySema = CreateSemaphore( NULL, 0, n, NULL );
-	self->count = n;
-}
 
 void DThread_Init( DThread *self )
 {
@@ -455,319 +391,31 @@ void DaoInitThreadSys()
 }
 #endif /* WIN32	*/
 
+static dao_thread_t daoMainThreadID;
 void DaoInitThread()
 {
 	DaoInitThreadSys();
+	daoMainThreadID = DThread_Self();
+}
+int DThread_IsMain()
+{
+	dao_thread_t threadid = DThread_Self();
+	return DThread_Equal( threadid, daoMainThreadID );
+}
+#else
+
+int DThread_IsMain()
+{
+	return 1;
 }
 #endif /* DAO_WITH_THREAD */
 
 
+
+
+
 #ifdef DAO_WITH_CONCURRENT
 /* mt module: */
-static int DaoMT_PushSectionFrame( DaoProcess *proc )
-{
-	if( DaoProcess_PushSectionFrame( proc ) == NULL ){
-		DaoProcess_RaiseException( proc, DAO_ERROR, "code section not found!" );
-		return 0;
-	}
-	return 1;
-}
-
-static void DaoMutex_Lib_Mutex( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoMutex *mutex = DaoMutex_New();
-	DaoProcess_PutValue( proc, (DaoValue*) mutex );
-}
-static void DaoMutex_Lib_Lock( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoMutex *self = (DaoMutex*) par[0];
-	DaoMutex_Lock( self );
-}
-static void DaoMutex_Lib_Unlock( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoMutex *self = (DaoMutex*) par[0];
-	DaoMutex_Unlock( self );
-}
-static void DaoMutex_Lib_TryLock( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoMutex *self = (DaoMutex*) par[0];
-	DaoProcess_PutInteger( proc, DaoMutex_TryLock( self ) );
-}
-static void DaoMutex_Lib_Protect( DaoProcess *proc, DaoValue *p[], int n )
-{
-	DaoMutex *self = (DaoMutex*) p[0];
-	DaoVmCode *sect = DaoGetSectionCode( proc->activeCode );
-	if( sect == NULL || DaoMT_PushSectionFrame( proc ) == 0 ) return;
-	DaoMutex_Lock( self );
-	DaoProcess_Execute( proc );
-	DaoMutex_Unlock( self );
-	DaoProcess_PopFrame( proc );
-}
-static DaoFuncItem mutexMeths[] =
-{
-	{ DaoMutex_Lib_Mutex,     "mutex()=>mutex" },
-	{ DaoMutex_Lib_Lock,      "lock( self : mutex )" }, /* XXX remove??? */
-	{ DaoMutex_Lib_Unlock,    "unlock( self : mutex )" },
-	{ DaoMutex_Lib_TryLock,   "trylock( self : mutex )=>int" },
-	{ DaoMutex_Lib_Protect,   "protect( self : mutex )[]" },
-	/* ??? TODO: protect( self : mutex, try=0 )[locked:int] */
-	{ NULL, NULL }
-};
-static void DaoMutex_Delete( DaoMutex *self )
-{
-	DaoCstruct_Free( (DaoCstruct*) self );
-	DMutex_Destroy( & self->myMutex );
-	dao_free( self );
-}
-
-DaoTypeBase mutexTyper =
-{
-	"mutex", NULL, NULL, (DaoFuncItem*) mutexMeths, {0}, {0},
-	(FuncPtrDel) DaoMutex_Delete, NULL
-};
-
-DaoMutex* DaoMutex_New()
-{
-	DaoMutex* self = (DaoMutex*) dao_calloc( 1, sizeof(DaoMutex) );
-	DaoCstruct_Init( (DaoCstruct*) self, dao_type_mutex );
-	DMutex_Init( & self->myMutex );
-	return self;
-}
-void DaoMutex_Lock( DaoMutex *self )
-{
-	DMutex_Lock( & self->myMutex );
-}
-void DaoMutex_Unlock( DaoMutex *self )
-{
-	DMutex_Unlock( & self->myMutex );
-}
-int DaoMutex_TryLock( DaoMutex *self )
-{
-	return DMutex_TryLock( & self->myMutex );
-}
-/* Condition variable */
-static void DaoCondV_Lib_CondVar( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoProcess_PutValue( proc, (DaoValue*)DaoCondVar_New() );
-}
-static void DaoCondV_Lib_Wait( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoCondVar *self = (DaoCondVar*) par[0];
-	DaoMutex *mutex = (DaoMutex*) par[1];
-	DCondVar_Wait( & self->myCondVar, & mutex->myMutex );
-}
-static void DaoCondV_Lib_TimedWait( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoCondVar *self = (DaoCondVar*) par[0];
-	DaoMutex *mutex = (DaoMutex*) par[1];
-	DaoProcess_PutInteger( proc,
-			DCondVar_TimedWait( & self->myCondVar, & mutex->myMutex, par[2]->xFloat.value ) );
-}
-static void DaoCondV_Lib_Signal( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoCondVar *self = (DaoCondVar*) par[0];
-	DCondVar_Signal( & self->myCondVar );
-}
-static void DaoCondV_Lib_BroadCast( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoCondVar *self = (DaoCondVar*) par[0];
-	DCondVar_BroadCast( & self->myCondVar );
-}
-static DaoFuncItem condvMeths[] =
-{
-	{ DaoCondV_Lib_CondVar,   "condition()=>condition" },
-	{ DaoCondV_Lib_Wait,      "wait( self : condition, mtx : mutex )" },
-	{ DaoCondV_Lib_TimedWait, "timedwait( self : condition, mtx : mutex, seconds :float )=>int" },
-	{ DaoCondV_Lib_Signal,    "signal( self : condition )" },
-	{ DaoCondV_Lib_BroadCast, "broadcast( self : condition )" },
-	{ NULL, NULL }
-};
-
-DaoTypeBase condvTyper =
-{
-	"condition", NULL, NULL, (DaoFuncItem*) condvMeths, {0}, {0},
-	(FuncPtrDel) DaoCondVar_Delete, NULL
-};
-DaoCondVar* DaoCondVar_New()
-{
-	DaoCondVar* self = (DaoCondVar*) dao_calloc( 1, sizeof(DaoCondVar) );
-	DaoCstruct_Init( (DaoCstruct*) self, dao_type_condvar );
-	DCondVar_Init( & self->myCondVar );
-	return self;
-}
-void DaoCondVar_Delete( DaoCondVar *self )
-{
-	DaoCstruct_Free( (DaoCstruct*) self );
-	DCondVar_Destroy( & self->myCondVar );
-	dao_free( self );
-}
-
-void DaoCondVar_Wait( DaoCondVar *self, DaoMutex *mutex )
-{
-	DCondVar_Wait( & self->myCondVar, & mutex->myMutex );
-}
-int  DaoCondVar_TimedWait( DaoCondVar *self, DaoMutex *mutex, double seconds )
-{
-	return DCondVar_TimedWait( & self->myCondVar, & mutex->myMutex, seconds );
-}
-
-void DaoCondVar_Signal( DaoCondVar *self )
-{
-	DCondVar_Signal( & self->myCondVar );
-}
-void DaoCondVar_BroadCast( DaoCondVar *self )
-{
-	DCondVar_BroadCast( & self->myCondVar );
-}
-/* Semaphore */
-static void DaoSema_Lib_Sema( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoProcess_PutValue( proc, (DaoValue*)DaoSema_New( par[0]->xInteger.value ) );
-}
-static void DaoSema_Lib_Wait( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoSema *self = (DaoSema*) par[0];
-	DSema_Wait( & self->mySema );
-}
-static void DaoSema_Lib_Post( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoSema *self = (DaoSema*) par[0];
-	DSema_Post( & self->mySema );
-}
-static void DaoSema_Lib_SetValue( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoSema *self = (DaoSema*) par[0];
-	DSema_SetValue( & self->mySema, par[1]->xInteger.value );
-}
-static void DaoSema_Lib_GetValue( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoSema *self = (DaoSema*) par[0];
-	DaoProcess_PutInteger( proc, DSema_GetValue( & self->mySema ) );
-}
-static void DaoSema_Lib_Protect( DaoProcess *proc, DaoValue *p[], int n )
-{
-	DaoSema *self = (DaoSema*) p[0];
-	DaoVmCode *sect = DaoGetSectionCode( proc->activeCode );
-	if( sect == NULL || DaoMT_PushSectionFrame( proc ) == 0 ) return;
-	DSema_Wait( & self->mySema );
-	DaoProcess_Execute( proc );
-	DSema_Post( & self->mySema );
-	DaoProcess_PopFrame( proc );
-}
-static DaoFuncItem semaMeths[] =
-{
-	{ DaoSema_Lib_Sema,      "semaphore( value = 0 )=>semaphore" },
-	{ DaoSema_Lib_Wait,      "wait( self : semaphore )" },
-	{ DaoSema_Lib_Post,      "post( self : semaphore )" },
-	{ DaoSema_Lib_SetValue,  "setvalue( self : semaphore, n :int )" },
-	{ DaoSema_Lib_GetValue,  "getvalue( self : semaphore )=>int" },
-	{ DaoSema_Lib_Protect,   "protect( self : semaphore )[]" },
-	{ NULL, NULL }
-};
-DaoTypeBase semaTyper =
-{
-	"semaphore", NULL, NULL, (DaoFuncItem*) semaMeths, {0}, {0},
-	(FuncPtrDel) DaoSema_Delete, NULL
-};
-DaoSema* DaoSema_New( int n )
-{
-	DaoSema* self = (DaoSema*) dao_calloc( 1, sizeof(DaoSema) );
-	DaoCstruct_Init( (DaoCstruct*) self, dao_type_sema );
-	DSema_Init( & self->mySema, ( n < 0 )? 0 : n );
-	return self;
-}
-void DaoSema_Delete( DaoSema *self )
-{
-	DaoCstruct_Free( (DaoCstruct*) self );
-	DSema_Destroy( & self->mySema );
-	dao_free( self );
-}
-
-void DaoSema_Wait( DaoSema *self )
-{
-	DSema_Wait( & self->mySema );
-}
-void DaoSema_Post( DaoSema *self )
-{
-	DSema_Post( & self->mySema );
-}
-
-void DaoSema_SetValue( DaoSema *self, int n )
-{
-	DSema_SetValue( & self->mySema, ( n < 0 )? 0 : n );
-}
-int  DaoSema_GetValue( DaoSema *self )
-{
-	return DSema_GetValue( & self->mySema );
-}
-
-
-static void DaoFuture_Lib_Value( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoFuture *self = (DaoFuture*) par[0];
-	if( self->state == DAO_CALL_FINISHED ){
-		DaoProcess_PutValue( proc, self->value );
-		return;
-	}
-	proc->status = DAO_VMPROC_SUSPENDED;
-	proc->pauseType = DAO_VMP_ASYNC;
-	DaoCallServer_AddWait( proc, self, -1, DAO_FUTURE_VALUE );
-}
-static void DaoFuture_Lib_Wait( DaoProcess *proc, DaoValue *par[], int N )
-{
-	DaoFuture *self = (DaoFuture*) par[0];
-	float timeout = par[1]->xFloat.value;
-	DaoProcess_PutInteger( proc, self->state == DAO_CALL_FINISHED );
-	if( self->state == DAO_CALL_FINISHED || timeout == 0 ) return;
-	proc->status = DAO_VMPROC_SUSPENDED;
-	proc->pauseType = DAO_VMP_ASYNC;
-	DaoCallServer_AddWait( proc, self, timeout, DAO_FUTURE_WAIT );
-}
-static DaoFuncItem futureMeths[] =
-{
-	{ DaoFuture_Lib_Value,   "value( self : future<@V> )=>@V" },
-	{ DaoFuture_Lib_Wait,    "wait( self : future<@V>, timeout : float = -1 )=>int" },
-	{ NULL, NULL }
-};
-static void DaoFuture_Delete( DaoFuture *self )
-{
-	GC_DecRC( self->value );
-	GC_DecRC( self->unitype );
-	GC_DecRC( self->object );
-	GC_DecRC( self->routine );
-	GC_DecRC( self->process );
-	GC_DecRC( self->precondition );
-	GC_DecRC( self->sorting );
-	DaoValue_ClearAll( self->params, self->parCount );
-	dao_free( self );
-}
-
-static DaoTypeCore futureCore =
-{
-	NULL,
-	DaoValue_SafeGetField,
-	DaoValue_SafeSetField,
-	DaoValue_GetItem,
-	DaoValue_SetItem,
-	DaoValue_Print
-};
-DaoTypeBase futureTyper =
-{
-	"future", & futureCore, NULL, (DaoFuncItem*) futureMeths, {0}, {0},
-	(FuncPtrDel) DaoFuture_Delete, NULL
-};
-
-DaoFuture* DaoFuture_New()
-{
-	DaoFuture *self = (DaoFuture*)dao_calloc(1,sizeof(DaoFuture));
-	DaoValue_Init( self, DAO_FUTURE );
-	GC_IncRC( dao_none_value );
-	self->state = DAO_CALL_QUEUED;
-	self->state2 = DAO_FUTURE_VALUE;
-	self->value = dao_none_value;
-	return self;
-}
-
 
 
 typedef struct DaoTaskData DaoTaskData;
@@ -796,28 +444,30 @@ void DaoProcess_ReturnFutureValue( DaoProcess *self, DaoFuture *future )
 {
 	DaoType *type;
 	if( future == NULL ) return;
-	type = future->unitype;
+	type = future->ctype;
 	type = type && type->nested->size ? type->nested->items.pType[0] : NULL;
 	switch( self->status ){
-	case DAO_VMPROC_FINISHED :
-	case DAO_VMPROC_ABORTED :
+	case DAO_PROCESS_ABORTED :
+		future->state = DAO_CALL_ABORTED;
+		break;
+	case DAO_PROCESS_FINISHED :
 		DaoValue_Move( self->stackValues[0], & future->value, type );
 		future->state = DAO_CALL_FINISHED;
 		break;
-	case DAO_VMPROC_SUSPENDED : future->state = DAO_CALL_PAUSED; break;
-	case DAO_VMPROC_RUNNING :
-	case DAO_VMPROC_STACKED : future->state = DAO_CALL_RUNNING; break;
+	case DAO_PROCESS_SUSPENDED : future->state = DAO_CALL_PAUSED; break;
+	case DAO_PROCESS_RUNNING :
+	case DAO_PROCESS_STACKED : future->state = DAO_CALL_RUNNING; break;
 	default : break;
 	}
 }
-static void DaoMT_InitProcess( DaoProcess *proto, DaoProcess *clone )
+static void DaoMT_InitProcess( DaoProcess *proto, DaoProcess *clone, int argcount )
 {
 	DaoProcess_PushRoutine( clone, proto->activeRoutine, proto->activeObject );
 	clone->activeCode = proto->activeCode;
 	DaoProcess_PushFunction( clone, proto->topFrame->routine );
-	DaoProcess_SetActiveFrame( clone, clone->topFrame );
-	DaoProcess_PushSectionFrame( clone );
+	DaoProcess_InitCodeSection( clone, argcount );
 	clone->topFrame->outer = proto;
+	clone->topFrame->host = proto->topFrame->prev;
 	clone->topFrame->returning = -1;
 }
 static void DaoMT_RunIterateFunctional( void *p )
@@ -831,7 +481,7 @@ static void DaoMT_RunIterateFunctional( void *p )
 	DaoVmCode *sect = self->sect;
 	daoint i, n = self->param->xInteger.value;
 
-	DaoMT_InitProcess( self->proto, clone );
+	DaoMT_InitProcess( self->proto, clone, 2 );
 	tidint.value = self->first;
 	for(i=self->first; i<n; i+=self->step){
 		idint.value = i;
@@ -839,7 +489,7 @@ static void DaoMT_RunIterateFunctional( void *p )
 		if( sect->b >1 ) DaoProcess_SetValue( clone, sect->a+1, threadid );
 		clone->topFrame->entry = self->entry;
 		DaoProcess_Execute( clone );
-		if( clone->status != DAO_VMPROC_FINISHED ) break;
+		if( clone->status != DAO_PROCESS_FINISHED ) break;
 	}
 }
 static void DaoMT_RunListFunctional( void *p )
@@ -854,10 +504,10 @@ static void DaoMT_RunListFunctional( void *p )
 	DaoList *list2 = (DaoList*) self->result;
 	DaoProcess *clone = self->clone;
 	DaoVmCode *sect = self->sect;
-	DaoValue **items = list->items.items.pValue;
-	daoint i, n = list->items.size;
+	DaoValue **items = list->value->items.pValue;
+	daoint i, n = list->value->size;
 
-	DaoMT_InitProcess( self->proto, clone );
+	DaoMT_InitProcess( self->proto, clone, 3 );
 	tidint.value = self->first;
 	for(i=self->first; i<n; i+=self->step){
 		idint.value = i;
@@ -866,7 +516,7 @@ static void DaoMT_RunListFunctional( void *p )
 		if( sect->b >2 ) DaoProcess_SetValue( clone, sect->a+2, threadid );
 		clone->topFrame->entry = self->entry;
 		DaoProcess_Execute( clone );
-		if( clone->status != DAO_VMPROC_FINISHED ) break;
+		if( clone->status != DAO_PROCESS_FINISHED ) break;
 		res = clone->stackValues[0];
 		if( self->funct == DVM_FUNCT_MAP ){
 			self->status |= DaoList_SetItem( list2, res, i );
@@ -893,21 +543,21 @@ static void DaoMT_RunMapFunctional( void *p )
 	DaoList *list2 = (DaoList*) self->result;
 	DaoProcess *clone = self->clone;
 	DaoVmCode *sect = self->sect;
-	DaoType *type = map->unitype;
+	DaoType *type = map->ctype;
 	DNode *node = NULL;
 	daoint i = 0;
 
-	DaoMT_InitProcess( self->proto, clone );
+	DaoMT_InitProcess( self->proto, clone, 3 );
 	tidint.value = self->first;
 	type = type && type->nested->size > 1 ? type->nested->items.pType[1] : NULL;
-	for(node=DMap_First( map->items ); node; node=DMap_Next(map->items, node) ){
+	for(node=DMap_First( map->value ); node; node=DMap_Next(map->value, node) ){
 		if( (i++) % self->step != self->first ) continue;
 		if( sect->b >0 ) DaoProcess_SetValue( clone, sect->a, node->key.pValue );
 		if( sect->b >1 ) DaoProcess_SetValue( clone, sect->a+1, node->value.pValue );
 		if( sect->b >2 ) DaoProcess_SetValue( clone, sect->a+2, threadid );
 		clone->topFrame->entry = self->entry;
 		DaoProcess_Execute( clone );
-		if( clone->status != DAO_VMPROC_FINISHED ) break;
+		if( clone->status != DAO_PROCESS_FINISHED ) break;
 		res = clone->stackValues[0];
 		if( self->funct == DVM_FUNCT_MAP ){
 			self->status |= DaoList_SetItem( list2, res, i-1 );
@@ -928,8 +578,7 @@ static void DaoMT_RunMapFunctional( void *p )
 
 #ifdef DAO_WITH_NUMARRAY
 void DaoArray_GetSliceShape( DaoArray *self, daoint **dims, short *ndim );
-int DaoArray_SliceSize( DaoArray *self );
-int DaoArray_IndexFromSlice( DaoArray *self, DArray *slice, daoint sid );
+int DaoArray_IndexFromSlice( DaoArray *self, DList *slice, daoint sid );
 DaoValue* DaoArray_GetValue( DaoArray *self, daoint i, DaoValue *res );
 void DaoArray_SetValue( DaoArray *self, daoint i, DaoValue *value );
 
@@ -945,16 +594,18 @@ static void DaoMT_RunArrayFunctional( void *p )
 	DaoVmCode *sect = self->sect;
 	DaoArray *param = (DaoArray*) self->param;
 	DaoArray *result = (DaoArray*) self->result;
-	DaoArray *original = param->original;
-	DaoArray *array = original ? original : param;
-	DArray *slices = param->slices;
-	daoint *dims = array->dims;
-	daoint i, id, id2, n = DaoArray_SliceSize( param );
+	DaoArray *array = DaoArray_GetWorkArray( param );
+	daoint size = DaoArray_GetWorkSize( param );
+	daoint start = DaoArray_GetWorkStart( param );
+	daoint len = DaoArray_GetWorkIntervalSize( param );
+	daoint step = DaoArray_GetWorkStep( param );
+	daoint *dims = param->dims;
+	daoint i, id, id2, n = size;
 	int j, D = array->ndim;
 	int isvec = (D == 2 && (dims[0] ==1 || dims[1] == 1));
 	int stackBase, vdim = sect->b - 1;
 
-	DaoMT_InitProcess( self->proto, clone );
+	DaoMT_InitProcess( self->proto, clone, array->ndim + 1 );
 	tidint.xInteger.value = self->first;
 
 	stackBase = clone->topFrame->active->stackBase;
@@ -962,7 +613,7 @@ static void DaoMT_RunArrayFunctional( void *p )
 	for(j=0; j<vdim; j++) idval[j]->xInteger.value = 0;
 	for(i=self->first; i<n; i+=self->step){
 		idval = clone->stackValues + stackBase + sect->a + 1;
-		id = id2 = (original ? DaoArray_IndexFromSlice( original, slices, i ) : i);
+		id = id2 = start + (i / len) * step + (i % len);
 		if( isvec ){
 			if( vdim >0 ) idval[0]->xInteger.value = id2;
 			if( vdim >1 ) idval[1]->xInteger.value = id2;
@@ -983,7 +634,7 @@ static void DaoMT_RunArrayFunctional( void *p )
 		if( sect->b > 6 ) DaoProcess_SetValue( clone, sect->a+6, threadid );
 		clone->topFrame->entry = self->entry;
 		DaoProcess_Execute( clone );
-		if( clone->status != DAO_VMPROC_FINISHED ) break;
+		if( clone->status != DAO_PROCESS_FINISHED ) break;
 		res = clone->stackValues[0];
 		if( self->funct == DVM_FUNCT_MAP ){
 			DaoArray_SetValue( result, i, res );
@@ -997,7 +648,6 @@ static void DaoMT_RunFunctional( void *p )
 {
 	DaoTaskData *self = (DaoTaskData*)p;
 	DaoProcess *clone = self->clone;
-	DaoProcess_AcquireCV( clone );
 	switch( self->param->type ){
 	case DAO_INTEGER : DaoMT_RunIterateFunctional( p ); break;
 	case DAO_LIST  : DaoMT_RunListFunctional( p ); break;
@@ -1006,11 +656,10 @@ static void DaoMT_RunFunctional( void *p )
 	case DAO_ARRAY : DaoMT_RunArrayFunctional( p ); break;
 #endif
 	}
-	DaoProcess_ReleaseCV( clone );
-	self->status |= clone->status != DAO_VMPROC_FINISHED;
+	self->status |= clone->status != DAO_PROCESS_FINISHED;
 	DMutex_Lock( self->mutex );
 	*self->joined += 1;
-	if( clone->exceptions->size ) DaoProcess_PrintException( clone, 1 );
+	if( clone->exceptions->size ) DaoProcess_PrintException( clone, NULL, 1 );
 	DCondVar_Signal( self->condv );
 	DMutex_Unlock( self->mutex );
 }
@@ -1023,7 +672,8 @@ static void DaoMT_Functional( DaoProcess *proc, DaoValue *P[], int N, int F )
 	DaoValue *result = NULL;
 	DaoList *list = NULL;
 	DaoArray *array = NULL;
-	DaoVmCode *sect = DaoGetSectionCode( proc->activeCode );
+	DaoVmCode *sect = NULL;
+	DaoStackFrame *frame = DaoProcess_FindSectionFrame( proc );
 	int i, entry, threads = P[1]->xInteger.value;
 	daoint index = -1, status = 0, joined = 0;
 	DNode *node = NULL;
@@ -1038,15 +688,19 @@ static void DaoMT_Functional( DaoProcess *proc, DaoValue *P[], int N, int F )
 			result = (DaoValue*) list;
 		}
 		break;
-	case DVM_FUNCT_APPLY : DaoProcess_PutValue( proc, param ); break;
 	case DVM_FUNCT_FIND : DaoProcess_PutValue( proc, dao_none_value ); break;
 	}
 	if( threads <= 0 ) threads = 2;
-	if( sect == NULL || DaoMT_PushSectionFrame( proc ) == 0 ) return;
+	if( frame != proc->topFrame->prev ){
+		DaoProcess_RaiseError( proc, NULL, "Invalid code section from non-immediate caller" );
+		return;
+	}
+	sect = DaoProcess_InitCodeSection( proc, 0 );
+	if( sect == NULL ) return;
 	if( list ){
-		DArray_Clear( & list->items );
-		if( param->type == DAO_LIST ) DArray_Resize( & list->items, param->xList.items.size, NULL );
-		if( param->type == DAO_MAP ) DArray_Resize( & list->items, param->xMap.items->size, NULL );
+		DList_Clear( list->value );
+		if( param->type == DAO_LIST ) DList_Resize( list->value, param->xList.value->size, NULL );
+		if( param->type == DAO_MAP ) DList_Resize( list->value, param->xMap.value->size, NULL );
 #ifdef DAO_WITH_NUMARRAY
 	}else if( array && F == DVM_FUNCT_MAP ){
 		DaoArray_GetSliceShape( (DaoArray*) param, & array->dims, & array->ndim );
@@ -1075,7 +729,6 @@ static void DaoMT_Functional( DaoProcess *proc, DaoValue *P[], int N, int F )
 		task->condv = & condv;
 		task->mutex = & mutex;
 		task->clone = DaoVmSpace_AcquireProcess( proc->vmSpace );
-		task->clone->mutex = & mutex;
 		if( i ) DaoCallServer_AddTask( DaoMT_RunFunctional, task, 1 );
 	}
 	DaoMT_RunFunctional( tasks );
@@ -1092,18 +745,15 @@ static void DaoMT_Functional( DaoProcess *proc, DaoValue *P[], int N, int F )
 	if( F == DVM_FUNCT_FIND ){
 		DaoTuple *tuple = DaoProcess_PutTuple( proc, 0 );
 		if( param->type == DAO_LIST && index != -1 ){
-			DaoValue **items = param->xList.items.items.pValue;
-			GC_ShiftRC( items[index], tuple->items[1] );
-			tuple->items[1] = items[index];
-			tuple->items[0]->xInteger.value = index;
+			DaoValue **items = param->xList.value->items.pValue;
+			GC_Assign( & tuple->values[1], items[index] );
+			tuple->values[0]->xInteger.value = index;
 		}else if( param->type == DAO_MAP && node ){
-			GC_ShiftRC( node->key.pValue, tuple->items[0] );
-			GC_ShiftRC( node->value.pValue, tuple->items[1] );
-			tuple->items[0] = node->key.pValue;
-			tuple->items[1] = node->value.pValue;
+			GC_Assign( & tuple->values[0], node->key.pValue );
+			GC_Assign( & tuple->values[1], node->value.pValue );
 		}
 	}
-	if( status ) DaoProcess_RaiseException( proc, DAO_ERROR, "code section execution failed!" );
+	if( status ) DaoProcess_RaiseError( proc, NULL, "code section execution failed!" );
 	DMutex_Destroy( & mutex );
 	DCondVar_Destroy( & condv );
 	dao_free( tasks );
@@ -1111,33 +761,32 @@ static void DaoMT_Functional( DaoProcess *proc, DaoValue *P[], int N, int F )
 static void DaoMT_Start0( void *p )
 {
 	DaoProcess *proc = (DaoProcess*)p;
-	DaoProcess_Execute( proc );
+	int count = proc->exceptions->size;
+	DaoProcess_Start( proc );
 	DaoProcess_ReturnFutureValue( proc, proc->future );
+	if( proc->exceptions->size > count ) DaoProcess_PrintException( proc, NULL, 1 );
 	if( proc->future->state == DAO_CALL_FINISHED ){
+		DaoFuture_ActivateEvent( proc->future );
 		DaoVmSpace_ReleaseProcess( proc->vmSpace, proc );
 	}
 }
 static void DaoMT_Start( DaoProcess *proc, DaoValue *p[], int n )
 {
 	DaoProcess *clone;
-	DaoVmCode *vmc, *end;
-	DaoVmCode *sect = DaoGetSectionCode( proc->activeCode );
-	DaoFuture *future = DaoFuture_New();
-	DaoType *type = proc->activeTypes[proc->activeCode->c]->nested->items.pType[0];
+	DaoVmCode *vmc, *end, *sect;
+	DaoType *type = DaoProcess_GetReturnType( proc );
+	DaoFuture *future = DaoFuture_New( type, 0 );
 	int entry, nop = proc->activeCode[1].code == DVM_NOP;
 
-	type = DaoNamespace_MakeType( proc->activeNamespace, "future", DAO_FUTURE, NULL, &type, 1 );
-	GC_ShiftRC( type, future->unitype );
-	future->unitype = type;
 	DaoProcess_PutValue( proc, (DaoValue*) future );
-	if( sect == NULL || DaoMT_PushSectionFrame( proc ) == 0 ) return;
+	sect = DaoProcess_InitCodeSection( proc, 0 );
+	if( sect == NULL ) return;
 
 	entry = proc->topFrame->entry;
 	end = proc->activeRoutine->body->vmCodes->data.codes + proc->activeCode[nop+1].b;
 	clone = DaoVmSpace_AcquireProcess( proc->vmSpace );
 	DaoProcess_PopFrame( proc );
-	DaoProcess_SetActiveFrame( proc, proc->topFrame );
-	DaoMT_InitProcess( proc, clone );
+	DaoMT_InitProcess( proc, clone, 0 );
 	clone->topFrame->entry = entry;
 	/*
 	// Use the cloned process instead of the parent process, in case that
@@ -1146,22 +795,17 @@ static void DaoMT_Start( DaoProcess *proc, DaoValue *p[], int n )
 	clone->topFrame->outer = clone;
 	future->process = clone;
 	GC_IncRC( clone );
-	GC_ShiftRC( future, clone->future );
-	clone->future = future;
+	GC_Assign( & clone->future, future );
 	future->state = DAO_CALL_RUNNING;
 
 	for(vmc=sect; vmc!=end; vmc++){
 		int i = -1, code = vmc->code;
 		if( code == DVM_GETVH || (code >= DVM_GETVH_I && code <= DVM_GETVH_C) ){
-			if( vmc->a <= 1 ) i = vmc->b;
+			i = vmc->b;
 		}else if( code == DVM_SETVH || (code >= DVM_SETVH_II && code <= DVM_SETVH_CC) ){
-			if( vmc->c <= 1 ) i = vmc->b;
+			i = vmc->b;
 		}
-		if( i >= 0 ){
-			/* These values should be shared with the parent thread: */
-			GC_ShiftRC( proc->activeValues[i], clone->activeValues[i] );
-			clone->activeValues[i] = proc->activeValues[i];
-		}
+		if( i >= 0 ) DaoValue_Move( proc->activeValues[i], & clone->activeValues[i], NULL );
 	}
 	DaoCallServer_AddTask( DaoMT_Start0, clone, p[0]->xEnum.value );
 }
@@ -1213,35 +857,145 @@ static void DaoMT_ArrayApply( DaoProcess *proc, DaoValue *p[], int n )
 {
 	DaoMT_Functional( proc, p, n, DVM_FUNCT_APPLY );
 }
+
+static void DaoMT_RoutMutexSet( DMap *mutexes )
+{
+	DNode *it;
+	for(it=DMap_First(mutexes); it; it=DMap_Next(mutexes,it)){
+		DMutex *mutex = (DMutex*) it->value.pVoid;
+		DMutex_Destroy( mutex );
+		dao_free( mutex );
+	}
+	DMap_Delete( mutexes );
+}
+static DMutex* DaoMT_GetMutex( DaoRoutine *routine, void *key )
+{
+	DNode *it;
+	DMap *mutexes;
+	DMutex *mutex = NULL;
+
+	DMutex_Lock( & mainVmSpace->mutexMisc );
+	it = DMap_Find( routine->body->aux, DaoMT_RoutMutexSet );
+	if( it == NULL ) it = DMap_Insert( routine->body->aux, DaoMT_RoutMutexSet, DHash_New(0,0) );
+	mutexes = (DMap*) it->value.pVoid;
+	it = DMap_Find( mutexes, key );
+	if( it == NULL ){
+		mutex = (DMutex*) dao_calloc(1,sizeof(DMutex));
+		DMutex_Init( mutex );
+		DMap_Insert( mutexes, key, mutex );
+	}else{
+		mutex = (DMutex*) it->value.pVoid;
+	}
+	DMutex_Unlock( & mainVmSpace->mutexMisc );
+	return mutex;
+}
+static void DaoMT_ProcMutexCache( DMap *self )
+{
+	DMap_Delete( self );
+}
 static void DaoMT_Critical( DaoProcess *proc, DaoValue *p[], int n )
 {
-	DaoVmCode *sect = DaoGetSectionCode( proc->activeCode );
-	if( sect == NULL || DaoMT_PushSectionFrame( proc ) == 0 ) return;
-	if( proc->mutex ) DMutex_Lock( proc->mutex );
+	void *key;
+	DNode *it;
+	DMap *cache = (DMap*) DaoProcess_GetAuxData( proc, DaoMT_ProcMutexCache );
+	DaoVmCode *sect = DaoProcess_InitCodeSection( proc, 0 );
+	DaoRoutine *routine = proc->activeRoutine;
+
+	if( sect == NULL ) return;
+
+	/* Get the original routine, if this one is a specialized copy: */
+	while( routine->original ) routine = routine->original;
+
+	/*
+	// Use "routine + sect->c" instead of "sect" as the key for mutex,
+	// as "sect" may be different for different copy of specialized routine.
+	// But "sect->c" won't change after being set during compiling.
+	*/
+	key = routine + sect->c;
+
+	if( cache == NULL ){
+		cache = DHash_New(0,0); /* Local cache is used to avoid extra locking; */
+		DaoProcess_SetAuxData( proc, DaoMT_ProcMutexCache, cache );
+	}
+	it = DMap_Find( cache, key ); /* Check local cache first; */
+	if( it == NULL ) it = DMap_Insert( cache, key, DaoMT_GetMutex( routine, key ) );
+	DMutex_Lock( (DMutex*) it->value.pVoid );
 	DaoProcess_Execute( proc );
-	if( proc->mutex ) DMutex_Unlock( proc->mutex );
+	DMutex_Unlock( (DMutex*) it->value.pVoid );
 	DaoProcess_PopFrame( proc );
 }
 
+void DaoMT_Select( DaoProcess *proc, DaoValue *p[], int n );
+
 DaoFuncItem dao_mt_methods[] =
 {
-	{ DaoMT_Critical, "critical()[]" },
-	{ DaoMT_Start, "start( when : enum<auto,now> = $auto )[=>@V] =>future<@V>" },
-	{ DaoMT_Iterate, "iterate( times :int, threads=2 )[index:int,threadid:int]" },
+	{ DaoMT_Critical,
+		"critical()[]"
+	},
+	{ DaoMT_Start,
+		"start( when: enum<auto,now> = $auto ) [ => @V|none] => future<@V>"
+	},
+	{ DaoMT_Iterate,
+		"iterate( times: int, threads = 2 ) [index: int, threadid: int]"
+	},
+	{ DaoMT_Select,
+		"select( invar group: map<@T,int>, timeout = -1.0 )"
+			"=> tuple<selected: none|@T, value: any, status: enum<selected,timeout,finished>>"
+	},
 
-	{ DaoMT_ListIterate, "iterate( alist :list<@T>, threads=2 )[item:@T,index:int,threadid:int]" },
-	{ DaoMT_ListMap, "map( alist :list<@T>, threads=2 )[item:@T,index:int,threadid:int =>@T2] =>list<@T2>" },
-	{ DaoMT_ListApply, "apply( alist :list<@T>, threads=2 )[item:@T,index:int,threadid:int =>@T] =>list<@T>" },
-	{ DaoMT_ListFind, "find( alist :list<@T>, threads=2 )[item:@T,index:int,threadid:int =>int] =>tuple<index:int,item:@T>|none" },
+	{ DaoMT_ListIterate,
+		"iterate( alist: list<@T>, threads = 2 ) [item: @T, index: int, threadid: int]"
+	},
+	{ DaoMT_ListIterate,
+		"iterate( invar alist: list<@T>, threads = 2 )"
+			"[invar item: @T, index: int, threadid: int]"
+	},
+	{ DaoMT_ListMap,
+		"map( invar alist: list<@T>, threads = 2 ) [item: @T, index: int, threadid: int => @V]"
+			"=> list<@V>"
+	},
+	{ DaoMT_ListApply,
+		"apply( alist: list<@T>, threads = 2 ) [item: @T, index: int, threadid: int => @T]"
+	},
+	{ DaoMT_ListFind,
+		"find( invar alist: list<@T>, threads = 2 )"
+			"[invar item: @T, index: int, threadid: int => int]"
+			"=> tuple<index: int, item: @T> | none"
+	},
 
-	{ DaoMT_MapIterate, "iterate( amap :map<@K,@V>, threads=2 )[key:@K,value:@V,threadid:int]" },
-	{ DaoMT_MapMap, "map( amap :map<@K,@V>, threads=2 )[key:@K,value:@V,threadid:int =>@T] =>list<@T>" },
-	{ DaoMT_MapApply, "apply( amap :map<@K,@V>, threads=2 )[key:@K,value:@V,threadid:int =>@V] =>map<@K,@V>" },
-	{ DaoMT_MapFind, "find( amap :map<@K,@V>, threads=2 )[key:@K,value:@V,threadid:int =>int] =>tuple<key:@K,value:@V>|none" },
+	{ DaoMT_MapIterate,
+		"iterate( amap: map<@K,@V>, threads = 2 ) [key: @K, value: @V, threadid: int]"
+	},
+	{ DaoMT_MapIterate,
+		"iterate( invar amap: map<@K,@V>, threads = 2 )"
+			"[invar key: @K, invar value: @V, threadid: int]"
+	},
+	{ DaoMT_MapMap,
+		"map( invar amap: map<@K,@V>, threads = 2 ) [key: @K, value: @V, threadid: int => @T]"
+			"=> list<@T>"
+	},
+	{ DaoMT_MapApply,
+		"apply( amap: map<@K,@V>, threads = 2 ) [key: @K, value: @V, threadid: int => @V]"
+	},
+	{ DaoMT_MapFind,
+		"find( invar amap: map<@K,@V>, threads = 2 )"
+			"[invar key: @K, invar value: @V, threadid: int => int]"
+			"=> tuple<key: @K, value: @V>|none"
+	},
 
-	{ DaoMT_ArrayIterate, "iterate( aarray :array<@T>, threads=2 )[item:@T,I:int,J:int,K:int,L:int,M:int,threadid:int]" },
-	{ DaoMT_ArrayMap, "map( aarray :array<@T>, threads=2 )[item:@T,I:int,J:int,K:int,L:int,M:int,threadid:int =>@T2] =>array<@T2>" },
-	{ DaoMT_ArrayApply, "apply( aarray :array<@T>, threads=2 )[item:@T,I:int,J:int,K:int,L:int,M:int,threadid:int =>@T] =>array<@T>" },
+	{ DaoMT_ArrayIterate,
+		"iterate( invar aarray: array<@T>, threads = 2 )"
+			"[item: @T, I: int, J: int, K: int, L: int, M: int, threadid: int]"
+	},
+	{ DaoMT_ArrayMap,
+		"map( invar aarray: array<@T>, threads = 2 )"
+			"[item: @T, I: int, J: int, K: int, L: int, M: int, threadid: int => @T2]"
+			"=> array<@T2>"
+	},
+	{ DaoMT_ArrayApply,
+		"apply( aarray: array<@T>, threads = 2 )"
+			"[item: @T, I: int, J: int, K: int, L: int, M: int, threadid: int => @T]"
+	},
 	{ NULL, NULL }
 };
 

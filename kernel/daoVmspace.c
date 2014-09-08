@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,15 +14,16 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include<string.h>
@@ -45,7 +46,7 @@
 #include"daoStdlib.h"
 #include"daoProcess.h"
 #include"daoGC.h"
-#include"daoSched.h"
+#include"daoTasklet.h"
 #include"daoValue.h"
 
 #ifdef DAO_WITH_THREAD
@@ -58,45 +59,78 @@ DaoConfig daoConfig =
 {
 	1, /*cpu*/
 	0, /*jit*/
-	0, /*safe*/
-	1, /*typedcode*/
 	1, /*optimize*/
 	0, /*iscgi*/
 	8, /*tabspace*/
-	0, /*chindent*/
-	0, /*mbs*/
-	0  /*wcs*/
 };
 
 DaoVmSpace *mainVmSpace = NULL;
 DaoProcess *mainProcess = NULL;
 
+void dao_abort( const char *error )
+{
+	fprintf( stderr, "Dao aborted with fatal error: %s!\n", error );
+	exit(0);
+}
+void* dao_malloc( size_t size )
+{
+	void *p = malloc( size );
+	if( size && p == NULL ) dao_abort( "memory allocation failed" );
+	return p;
+}
+void* dao_calloc( size_t nmemb, size_t size )
+{
+	void *p = calloc( nmemb, size );
+	if( nmemb && size && p == NULL ) dao_abort( "memory allocation failed" );
+	return p;
+}
+void* dao_realloc( void *ptr, size_t size )
+{
+	void *p = realloc( ptr, size );
+	if( size && p == NULL ) dao_abort( "memory allocation failed" );
+	return p;
+}
+void  dao_free( void *p )
+{
+	free( p );
+}
 
 static int TestFile( DaoVmSpace *vms, DString *fname )
 {
 	if( MAP_Find( vms->vfiles, fname ) ) return 1;
 	if( MAP_Find( vms->vmodules, fname ) ) return 1;
-	return Dao_IsFile( fname->mbs );
+	return Dao_IsFile( fname->chars );
 }
 static int TestPath( DaoVmSpace *vms, DString *fname, int type )
 {
 	if( type == DAO_FILE_PATH ) return TestFile( vms, fname );
-	return Dao_IsDir( fname->mbs );
+	return Dao_IsDir( fname->chars );
+}
+void DaoAux_Delete( DMap *aux )
+{
+	DNode *it;
+	typedef void (*aux_delete)(void*);
+	for(it=DMap_First(aux); it; it=DMap_Next(aux,it)){
+		aux_delete del = (aux_delete) it->key.pVoid;
+		(*del)( it->value.pVoid );
+	}
+	DMap_Delete( aux );
 }
 
 
-#define DAO_FILE_TYPE_NUM  6
+#define DAO_FILE_TYPE_NUM  3
 
 static const char* const daoDllPrefix[] =
 {
-	"", "", "",
-	"dao_", "libdao_", "lib"
+	"", "", DAO_DLL_PREFIX "dao_"
 };
 static const char* const daoFileSuffix[] =
 {
-	".dac", ".dao", DAO_DLL_SUFFIX,
-	DAO_DLL_SUFFIX, DAO_DLL_SUFFIX, DAO_DLL_SUFFIX
-	/* duplicated for automatically adding "dao/libdao_/lib" prefix; */
+	".dac", ".dao", DAO_DLL_SUFFIX
+};
+static int daoModuleTypes[] =
+{
+	DAO_MODULE_DAC, DAO_MODULE_DAO, DAO_MODULE_DLL
 };
 
 #ifndef CHANGESET_ID
@@ -107,7 +141,7 @@ const char *const dao_copy_notice =
 "  Dao Virtual Machine " DAO_VERSION "\n"
 "  Built date: " __DATE__ "\n"
 "  Changeset ID: " CHANGESET_ID "\n\n"
-"  Copyright(C) 2006-2012, Fu Limin\n"
+"  Copyright(C) 2006-2014, Fu Limin\n"
 "  Dao is released under the terms of the Simplified BSD License\n"
 "  Dao Language website: http://www.daovm.net\n"
 ;
@@ -118,26 +152,30 @@ static const char *const cmd_help =
 "   -h, --help:           print this help information;\n"
 "   -v, --version:        print version information;\n"
 "   -e, --eval:           evaluate command line codes;\n"
-"   -d, --debug:          run in debug mode;\n"
 "   -i, --interactive:    run in interactive mode;\n"
+"   -d, --debug:          run in debug mode;\n"
+"   -p, --profile:        run in profile mode;\n"
+"   -r, --restart:        restart program on crash (unix) or nozero exit (win);\n"
 "   -c, --compile:        compile to bytecodes;\n"
 "   -a, --archive:        build archive file;\n"
 "   -l, --list-code:      print compiled bytecodes;\n"
 "   -j, --jit:            enable just-in-time compiling;\n"
 "   -Ox:                  optimization level (x=0 or 1);\n"
+"   --threads=number      minimum number of threads for processing tasklets;\n"
+"   --path=directory      add module searching path;\n"
+"   --module=module       preloading module;\n"
+"   --config=config       use configure file;\n"
 ;
 
 
 extern DaoTypeBase  baseTyper;
 extern DaoTypeBase  numberTyper;
 extern DaoTypeBase  stringTyper;
-extern DaoTypeBase  longTyper;
 extern DaoTypeBase  enumTyper;
 extern DaoTypeBase  listTyper;
 extern DaoTypeBase  mapTyper;
 extern DaoTypeBase  streamTyper;
 extern DaoTypeBase  routTyper;
-extern DaoTypeBase  funcTyper;
 extern DaoTypeBase  interTyper;
 extern DaoTypeBase  classTyper;
 extern DaoTypeBase  objTyper;
@@ -150,10 +188,8 @@ extern DaoTypeBase  comTyper;
 extern DaoTypeBase  abstypeTyper;
 extern DaoTypeBase  rgxMatchTyper;
 extern DaoTypeBase  futureTyper;
-
-extern DaoTypeBase mutexTyper;
-extern DaoTypeBase condvTyper;
-extern DaoTypeBase semaTyper;
+extern DaoTypeBase  channelTyper;
+extern DaoTypeBase  defaultCdataTyper;
 
 extern DaoTypeBase macroTyper;
 extern DaoTypeBase regexTyper;
@@ -171,9 +207,7 @@ DaoTypeBase* DaoVmSpace_GetTyper( short type )
 	switch( type ){
 	case DAO_INTEGER  :  return & numberTyper;
 	case DAO_FLOAT    :  return & numberTyper;
-	case DAO_DOUBLE   :  return & numberTyper;
 	case DAO_COMPLEX  :  return & comTyper;
-	case DAO_LONG     :  return & longTyper;
 	case DAO_ENUM     :  return & enumTyper;
 	case DAO_STRING   :  return & stringTyper;
 	case DAO_LIST     :  return & listTyper;
@@ -197,15 +231,13 @@ DaoTypeBase* DaoVmSpace_GetTyper( short type )
 	case DAO_VMSPACE   :  return & vmsTyper;
 	case DAO_TYPE      :  return & abstypeTyper;
 	case DAO_TYPEKERNEL : return & typeKernelTyper;
-#ifdef DAO_WITH_MACRO
-	case DAO_MACRO     :  return & macroTyper;
-#endif
-#ifdef DAO_WITH_CONCURRENT
-	case DAO_FUTURE    :  return & futureTyper;
-#endif
 	default : break;
 	}
 	return & baseTyper;
+}
+const char*const DaoVmSpace_GetCopyNotice()
+{
+	return dao_copy_notice;
 }
 
 void DaoVmSpace_SetOptions( DaoVmSpace *self, int options )
@@ -218,27 +250,26 @@ int DaoVmSpace_GetOptions( DaoVmSpace *self )
 }
 DaoNamespace* DaoVmSpace_FindNamespace( DaoVmSpace *self, DString *name )
 {
-	daoint i;
 	DNode *node;
 	DaoNamespace *ns = NULL;
 	DaoVmSpace_Lock( self );
 	node = DMap_Find( self->nsModules, name );
 	if( node ){
 		ns = (DaoNamespace*) node->value.pValue;
-		DArray_PushFront( self->loadedModules, ns );
+		DList_PushFront( self->loadedModules, ns );
 	}
 	DaoVmSpace_Unlock( self );
 	return ns;
 }
 DaoNamespace* DaoVmSpace_GetNamespace( DaoVmSpace *self, const char *name )
 {
-	DString str = DString_WrapMBS( name );
+	DString str = DString_WrapChars( name );
 	DaoNamespace *ns = DaoVmSpace_FindNamespace( self, & str );
 	if( ns ) return ns;
 	ns = DaoNamespace_New( self, name );
 	DaoVmSpace_Lock( self );
 	DMap_Insert( self->nsModules, & str, ns );
-	DArray_PushFront( self->loadedModules, ns );
+	DList_PushFront( self->loadedModules, ns );
 	DaoVmSpace_Unlock( self );
 	return ns;
 }
@@ -257,8 +288,9 @@ DaoProcess* DaoVmSpace_AcquireProcess( DaoVmSpace *self )
 	DMutex_Lock( & self->mutexProc );
 #endif
 	if( self->processes->size ){
-		proc = (DaoProcess*) DArray_Back( self->processes );
-		DArray_PopBack( self->processes );
+		proc = (DaoProcess*) DList_Back( self->processes );
+		proc->active = 0;
+		DList_PopBack( self->processes );
 	}else{
 		proc = DaoProcess_New( self );
 		DMap_Insert( self->allProcesses, proc, 0 );
@@ -274,16 +306,14 @@ void DaoVmSpace_ReleaseProcess( DaoVmSpace *self, DaoProcess *proc )
 	DMutex_Lock( & self->mutexProc );
 #endif
 	if( DMap_Find( self->allProcesses, proc ) ){
+		if( proc->factory ) DList_Clear( proc->factory );
+		if( proc->aux ) DaoAux_Delete( proc->aux );
 		GC_DecRC( proc->future );
 		proc->future = NULL;
-#ifdef DAO_WITH_THREAD
-		proc->condv = NULL;
-		proc->mutex = NULL;
-#endif
-		if( proc->factory ) DArray_Clear( proc->factory );
+		proc->aux = NULL;
 		DaoProcess_PopFrames( proc, proc->firstFrame );
-		DArray_Clear( proc->exceptions );
-		DArray_PushBack( self->processes, proc );
+		DList_Clear( proc->exceptions );
+		DList_PushBack( self->processes, proc );
 	}
 #ifdef DAO_WITH_THREAD
 	DMutex_Unlock( & self->mutexProc );
@@ -310,8 +340,8 @@ DaoParser* DaoVmSpace_AcquireParser( DaoVmSpace *self )
 	DMutex_Lock( & self->mutexMisc );
 #endif
 	if( self->parsers->size ){
-		parser = (DaoParser*) DArray_Back( self->parsers );
-		DArray_PopBack( self->parsers );
+		parser = (DaoParser*) DList_Back( self->parsers );
+		DList_PopBack( self->parsers );
 	}else{
 		parser = DaoParser_New();
 		parser->vmSpace = self;
@@ -321,6 +351,66 @@ DaoParser* DaoVmSpace_AcquireParser( DaoVmSpace *self )
 	DMutex_Unlock( & self->mutexMisc );
 #endif
 	return parser;
+}
+void DaoVmSpace_ReleaseParser( DaoVmSpace *self, DaoParser *parser )
+{
+#ifdef SHARE_NO_PARSER
+	DaoParser_Delete( parser ); return;
+#endif
+
+	DaoParser_Reset( parser );
+#ifdef DAO_WITH_THREAD
+	DMutex_Lock( & self->mutexMisc );
+#endif
+	if( DMap_Find( self->allParsers, parser ) ){
+		DList_PushBack( self->parsers, parser );
+	}
+#ifdef DAO_WITH_THREAD
+	DMutex_Unlock( & self->mutexMisc );
+#endif
+}
+DaoByteCoder* DaoVmSpace_AcquireByteCoder( DaoVmSpace *self )
+{
+	DaoByteCoder *byteCoder = NULL;
+
+#ifdef SHARE_NO_PARSER
+	byteCoder = DaoByteCoder_New( self );
+	//byteCoder->vmSpace = self;
+	return byteCoder;
+#endif
+
+#ifdef DAO_WITH_THREAD
+	DMutex_Lock( & self->mutexMisc );
+#endif
+	if( self->byteCoders->size ){
+		byteCoder = (DaoByteCoder*) DList_Back( self->byteCoders );
+		DList_PopBack( self->byteCoders );
+	}else{
+		byteCoder = DaoByteCoder_New( self );
+		//byteCoder->vmSpace = self;
+		DMap_Insert( self->allByteCoders, byteCoder, 0 );
+	}
+#ifdef DAO_WITH_THREAD
+	DMutex_Unlock( & self->mutexMisc );
+#endif
+	return byteCoder;
+}
+void DaoVmSpace_ReleaseByteCoder( DaoVmSpace *self, DaoByteCoder *byteCoder )
+{
+#ifdef SHARE_NO_PARSER
+	DaoByteCoder_Delete( byteCoder ); return;
+#endif
+
+	DaoByteCoder_Reset( byteCoder );
+#ifdef DAO_WITH_THREAD
+	DMutex_Lock( & self->mutexMisc );
+#endif
+	if( DMap_Find( self->allByteCoders, byteCoder ) ){
+		DList_PushBack( self->byteCoders, byteCoder );
+	}
+#ifdef DAO_WITH_THREAD
+	DMutex_Unlock( & self->mutexMisc );
+#endif
 }
 DaoInferencer* DaoVmSpace_AcquireInferencer( DaoVmSpace *self )
 {
@@ -334,8 +424,8 @@ DaoInferencer* DaoVmSpace_AcquireInferencer( DaoVmSpace *self )
 	DMutex_Lock( & self->mutexMisc );
 #endif
 	if( self->inferencers->size ){
-		inferencer = (DaoInferencer*) DArray_Back( self->inferencers );
-		DArray_PopBack( self->inferencers );
+		inferencer = (DaoInferencer*) DList_Back( self->inferencers );
+		DList_PopBack( self->inferencers );
 	}else{
 		inferencer = DaoInferencer_New();
 		DMap_Insert( self->allInferencers, inferencer, 0 );
@@ -344,6 +434,23 @@ DaoInferencer* DaoVmSpace_AcquireInferencer( DaoVmSpace *self )
 	DMutex_Unlock( & self->mutexMisc );
 #endif
 	return inferencer;
+}
+void DaoVmSpace_ReleaseInferencer( DaoVmSpace *self, DaoInferencer *inferencer )
+{
+#ifdef SHARE_NO_INFERENCER
+	DaoInferencer_Delete( inferencer ); return;
+#endif
+
+	DaoInferencer_Reset( inferencer );
+#ifdef DAO_WITH_THREAD
+	DMutex_Lock( & self->mutexMisc );
+#endif
+	if( DMap_Find( self->allInferencers, inferencer ) ){
+		DList_PushBack( self->inferencers, inferencer );
+	}
+#ifdef DAO_WITH_THREAD
+	DMutex_Unlock( & self->mutexMisc );
+#endif
 }
 DaoOptimizer* DaoVmSpace_AcquireOptimizer( DaoVmSpace *self )
 {
@@ -357,8 +464,8 @@ DaoOptimizer* DaoVmSpace_AcquireOptimizer( DaoVmSpace *self )
 	DMutex_Lock( & self->mutexMisc );
 #endif
 	if( self->optimizers->size ){
-		optimizer = (DaoOptimizer*) DArray_Back( self->optimizers );
-		DArray_PopBack( self->optimizers );
+		optimizer = (DaoOptimizer*) DList_Back( self->optimizers );
+		DList_PopBack( self->optimizers );
 	}else{
 		optimizer = DaoOptimizer_New();
 		DMap_Insert( self->allOptimizers, optimizer, 0 );
@@ -367,40 +474,6 @@ DaoOptimizer* DaoVmSpace_AcquireOptimizer( DaoVmSpace *self )
 	DMutex_Unlock( & self->mutexMisc );
 #endif
 	return optimizer;
-}
-void DaoVmSpace_ReleaseParser( DaoVmSpace *self, DaoParser *parser )
-{
-#ifdef SHARE_NO_PARSER
-	DaoParser_Delete( parser ); return;
-#endif
-
-	DaoParser_Reset( parser );
-#ifdef DAO_WITH_THREAD
-	DMutex_Lock( & self->mutexMisc );
-#endif
-	if( DMap_Find( self->allParsers, parser ) ){
-		DArray_PushBack( self->parsers, parser );
-	}
-#ifdef DAO_WITH_THREAD
-	DMutex_Unlock( & self->mutexMisc );
-#endif
-}
-void DaoVmSpace_ReleaseInferencer( DaoVmSpace *self, DaoInferencer *inferencer )
-{
-#ifdef SHARE_NO_INFERENCER
-	DaoInferencer_Delete( inferencer ); return;
-#endif
-
-	DaoInferencer_Reset( inferencer );
-#ifdef DAO_WITH_THREAD
-	DMutex_Lock( & self->mutexMisc );
-#endif
-	if( DMap_Find( self->allInferencers, inferencer ) ){
-		DArray_PushBack( self->inferencers, inferencer );
-	}
-#ifdef DAO_WITH_THREAD
-	DMutex_Unlock( & self->mutexMisc );
-#endif
 }
 void DaoVmSpace_ReleaseOptimizer( DaoVmSpace *self, DaoOptimizer *optimizer )
 {
@@ -412,7 +485,7 @@ void DaoVmSpace_ReleaseOptimizer( DaoVmSpace *self, DaoOptimizer *optimizer )
 	DMutex_Lock( & self->mutexMisc );
 #endif
 	if( DMap_Find( self->allOptimizers, optimizer ) ){
-		DArray_PushBack( self->optimizers, optimizer );
+		DList_PushBack( self->optimizers, optimizer );
 	}
 #ifdef DAO_WITH_THREAD
 	DMutex_Unlock( & self->mutexMisc );
@@ -433,10 +506,25 @@ DaoUserStream* DaoVmSpace_SetUserStdio( DaoVmSpace *self, DaoUserStream *stream 
 DaoUserStream* DaoVmSpace_SetUserStdError( DaoVmSpace *self, DaoUserStream *stream )
 {
 	if( self->errorStream == self->stdioStream ){
-		self->errorStream = DaoStream_New();
-		GC_ShiftRC( self->errorStream, self->stdioStream );
+		DaoStream *stream = DaoStream_New();
+		GC_Assign( & self->errorStream, stream );
 	}
 	return DaoStream_SetUserStream( self->errorStream, stream );
+}
+DaoDebugger* DaoVmSpace_SetUserDebugger( DaoVmSpace *self, DaoDebugger *handler )
+{
+	DaoDebugger *hd = self->debugger;
+	self->debugger = handler;
+	return hd;
+}
+DaoProfiler* DaoVmSpace_SetUserProfiler( DaoVmSpace *self, DaoProfiler *profiler )
+{
+	DaoProfiler *hd = self->profiler;
+	if( profiler == NULL || profiler->EnterFrame == NULL || profiler->LeaveFrame == NULL ){
+		profiler = NULL;
+	}
+	self->profiler = profiler;
+	return hd;
 }
 DaoUserHandler* DaoVmSpace_SetUserHandler( DaoVmSpace *self, DaoUserHandler *handler )
 {
@@ -463,29 +551,26 @@ static int dao_default_test_inliner( DaoNamespace *NS, DString *mode, DString *v
 	return 0;
 }
 
-DAO_DLL void Dao_MakePath( DString *base, DString *path );
-
 static void DaoVmSpace_InitPath( DaoVmSpace *self )
 {
 	DString *path;
 	char *daodir = getenv( "DAO_DIR" );
+	const char *const paths[] = { "modules", "./lib/dao/modules", "../lib/dao/modules" };
+	int i;
 
 	if( self->hasAuxlibPath && self->hasSyslibPath ) return;
-	DaoVmSpace_SetPath( self, self->startPath->mbs );
+	DaoVmSpace_SetPath( self, self->startPath->chars );
 
 	DaoVmSpace_AddPath( self, DAO_DIR );
 	if( self->hasAuxlibPath && self->hasSyslibPath ) return;
 
-	path = DString_New(1);
-	DString_SetMBS( path, "modules" );
-	Dao_MakePath( mainVmSpace->daoBinPath, path );
-	DaoVmSpace_AddPath( self, path->mbs );
-	if( self->hasAuxlibPath && self->hasSyslibPath ) goto Done;
-
-	DString_SetMBS( path, "../lib/dao/modules" );
-	Dao_MakePath( mainVmSpace->daoBinPath, path );
-	DaoVmSpace_AddPath( self, path->mbs );
-	if( self->hasAuxlibPath && self->hasSyslibPath ) goto Done;
+	path = DString_New();
+	for(i=0; i<3; ++i){
+		DString_SetChars( path, paths[i] );
+		Dao_MakePath( mainVmSpace->daoBinPath, path );
+		DaoVmSpace_AddPath( self, path->chars );
+		if( self->hasAuxlibPath && self->hasSyslibPath ) goto Done;
+	}
 
 	if( daodir ) DaoVmSpace_AddPath( self, daodir );
 Done:
@@ -496,70 +581,65 @@ Done:
 
 DaoVmSpace* DaoVmSpace_New()
 {
-	DaoVmSpace *self = (DaoVmSpace*) dao_malloc( sizeof(DaoVmSpace) );
+	DaoVmSpace *self = (DaoVmSpace*) dao_calloc( 1, sizeof(DaoVmSpace) );
 	DaoValue_Init( self, DAO_VMSPACE );
 	self->stdioStream = DaoStream_New();
-	self->options = 0;
-	self->stopit = 0;
-	self->safeTag = 1;
-	self->evalCmdline = 0;
-	self->hasAuxlibPath = 0;
-	self->hasSyslibPath = 0;
-	self->userHandler = NULL;
-	self->daoBinPath = DString_New(1);
-	self->startPath = DString_New(1);
-	self->mainSource = DString_New(1);
-	self->vfiles = DHash_New(D_STRING,D_STRING);
-	self->vmodules = DHash_New(D_STRING,0);
-	self->nsModules = DHash_New(D_STRING,0);
-	self->pathWorking = DString_New(1);
-	self->nameLoading = DArray_New(D_STRING);
-	self->pathLoading = DArray_New(D_STRING);
-	self->pathSearching = DArray_New(D_STRING);
-	self->virtualPaths = DArray_New(D_STRING);
-	self->sourceArchive = DArray_New(D_STRING);
-	self->processes = DArray_New(0);
-	self->allProcesses = DMap_New(D_VALUE,0);
-	self->parsers = DArray_New(0);
-	self->inferencers = DArray_New(0);
-	self->optimizers = DArray_New(0);
+	self->errorStream = DaoStream_New();
+	self->errorStream->file = stderr;
+	self->daoBinPath = DString_New();
+	self->startPath = DString_New();
+	self->mainSource = DString_New();
+	self->vfiles = DHash_New( DAO_DATA_STRING, DAO_DATA_STRING );
+	self->vmodules = DHash_New( DAO_DATA_STRING, 0 );
+	self->nsModules = DHash_New( DAO_DATA_STRING, 0 );
+	self->pathWorking = DString_New();
+	self->nameLoading = DList_New( DAO_DATA_STRING );
+	self->pathLoading = DList_New( DAO_DATA_STRING );
+	self->pathSearching = DList_New( DAO_DATA_STRING );
+	self->virtualPaths = DList_New( DAO_DATA_STRING );
+	self->sourceArchive = DList_New( DAO_DATA_STRING );
+	self->processes = DList_New(0);
+	self->parsers = DList_New(0);
+	self->byteCoders = DList_New(0);
+	self->inferencers = DList_New(0);
+	self->optimizers = DList_New(0);
+	self->allProcesses = DMap_New( DAO_DATA_VALUE, 0 );
 	self->allParsers = DMap_New(0,0);
+	self->allByteCoders = DMap_New(0,0);
 	self->allInferencers = DMap_New(0,0);
 	self->allOptimizers = DMap_New(0,0);
-	self->loadedModules = DArray_New(D_VALUE);
-	self->preloadModules = NULL;
-
-	if( daoConfig.safe ) self->options |= DAO_EXEC_SAFE;
+	self->loadedModules = DList_New( DAO_DATA_VALUE );
 
 #ifdef DAO_WITH_THREAD
 	DMutex_Init( & self->mutexLoad );
 	DMutex_Init( & self->mutexProc );
 	DMutex_Init( & self->mutexMisc );
+	DCondVar_Init( & self->condvWait );
 #endif
 
-	self->nsInternal = NULL; /* need to be set for DaoNamespace_New() */
-	self->nsInternal = DaoNamespace_New( self, "dao" );
-	self->nsInternal->vmSpace = self;
-	self->nsInternal->refCount += 1;
-	DMap_Insert( self->nsModules, self->nsInternal->name, self->nsInternal );
-	DArray_PushFront( self->loadedModules, self->nsInternal );
+	self->daoNamespace = NULL; /* need to be set for DaoNamespace_New() */
+	self->daoNamespace = DaoNamespace_New( self, "dao" );
+	self->daoNamespace->vmSpace = self;
+	GC_IncRC( self->daoNamespace );
+	DMap_Insert( self->nsModules, self->daoNamespace->name, self->daoNamespace );
+	DList_PushFront( self->loadedModules, self->daoNamespace );
 
-	DaoNamespace_AddCodeInliner( self->nsInternal, "test", dao_default_test_inliner );
+	DaoNamespace_AddCodeInliner( self->daoNamespace, "test", dao_default_test_inliner );
 
 	self->mainNamespace = DaoNamespace_New( self, "MainNamespace" );
 	self->mainNamespace->vmSpace = self;
-	self->mainNamespace->refCount ++;
-	self->stdioStream->refCount += 2;
-	self->errorStream = self->stdioStream;
-
-	self->ReadLine = NULL;
-	self->AddHistory = NULL;
+	GC_IncRC( self->mainNamespace );
+	GC_IncRC( self->stdioStream );
+	GC_IncRC( self->errorStream );
 
 	self->mainProcess = DaoProcess_New( self );
 	GC_IncRC( self->mainProcess );
 
-	if( mainVmSpace ) DaoNamespace_AddParent( self->nsInternal, mainVmSpace->nsInternal );
+	if( mainVmSpace ) DaoNamespace_AddParent( self->daoNamespace, mainVmSpace->daoNamespace );
 
+#ifdef DAO_USE_GC_LOGGER
+	DaoObjectLogger_LogNew( (DaoValue*) self );
+#endif
 	return self;
 }
 void DaoVmSpace_DeleteData( DaoVmSpace *self )
@@ -568,13 +648,16 @@ void DaoVmSpace_DeleteData( DaoVmSpace *self )
 	for(it=DMap_First(self->allParsers); it; it=DMap_Next(self->allParsers,it)){
 		DaoParser_Delete( (DaoParser*) it->key.pVoid );
 	}
+	for(it=DMap_First(self->allByteCoders); it; it=DMap_Next(self->allByteCoders,it)){
+		DaoByteCoder_Delete( (DaoByteCoder*) it->key.pVoid );
+	}
 	for(it=DMap_First(self->allInferencers); it; it=DMap_Next(self->allInferencers,it)){
 		DaoInferencer_Delete( (DaoInferencer*) it->key.pVoid );
 	}
 	for(it=DMap_First(self->allOptimizers); it; it=DMap_Next(self->allOptimizers,it)){
 		DaoOptimizer_Delete( (DaoOptimizer*) it->key.pVoid );
 	}
-	GC_DecRC( self->nsInternal );
+	GC_DecRC( self->daoNamespace );
 	GC_DecRC( self->mainNamespace );
 	GC_DecRC( self->stdioStream );
 	GC_DecRC( self->errorStream );
@@ -582,34 +665,40 @@ void DaoVmSpace_DeleteData( DaoVmSpace *self )
 	DString_Delete( self->startPath );
 	DString_Delete( self->mainSource );
 	DString_Delete( self->pathWorking );
-	DArray_Delete( self->nameLoading );
-	DArray_Delete( self->pathLoading );
-	DArray_Delete( self->pathSearching );
-	DArray_Delete( self->virtualPaths );
-	DArray_Delete( self->processes );
-	DArray_Delete( self->loadedModules );
-	DArray_Delete( self->sourceArchive );
-	DArray_Delete( self->parsers );
-	DArray_Delete( self->inferencers );
-	DArray_Delete( self->optimizers );
+	DList_Delete( self->nameLoading );
+	DList_Delete( self->pathLoading );
+	DList_Delete( self->pathSearching );
+	DList_Delete( self->virtualPaths );
+	DList_Delete( self->processes );
+	DList_Delete( self->loadedModules );
+	DList_Delete( self->sourceArchive );
+	DList_Delete( self->parsers );
+	DList_Delete( self->byteCoders );
+	DList_Delete( self->inferencers );
+	DList_Delete( self->optimizers );
 	DMap_Delete( self->vfiles );
 	DMap_Delete( self->vmodules );
 	DMap_Delete( self->allProcesses );
 	DMap_Delete( self->allParsers );
+	DMap_Delete( self->allByteCoders );
 	DMap_Delete( self->allInferencers );
 	DMap_Delete( self->allOptimizers );
 	GC_DecRC( self->mainProcess );
 	self->stdioStream = NULL;
-	if( self->preloadModules ) DArray_Delete( self->preloadModules );
+	if( self->preloadModules ) DList_Delete( self->preloadModules );
 }
 void DaoVmSpace_Delete( DaoVmSpace *self )
 {
+#ifdef DAO_USE_GC_LOGGER
+	DaoObjectLogger_LogDelete( (DaoValue*) self );
+#endif
 	if( self->stdioStream ) DaoVmSpace_DeleteData( self );
 	DMap_Delete( self->nsModules );
 #ifdef DAO_WITH_THREAD
 	DMutex_Destroy( & self->mutexLoad );
 	DMutex_Destroy( & self->mutexProc );
 	DMutex_Destroy( & self->mutexMisc );
+	DCondVar_Destroy( & self->condvWait );
 #endif
 	dao_free( self );
 }
@@ -628,35 +717,36 @@ void DaoVmSpace_Unlock( DaoVmSpace *self )
 int DaoVmSpace_ReadSource( DaoVmSpace *self, DString *fname, DString *source )
 {
 	DNode *node = MAP_Find( self->vfiles, fname );
-	/* printf( "reading %s\n", fname->mbs ); */
+	/* printf( "reading %s\n", fname->chars ); */
 	if( node ){
 		DString_Assign( source, node->value.pString );
 		return 1;
 	}
-	if( DaoFile_ReadAll( fopen( fname->mbs, "r" ), source, 1 ) ) return 1;
-	DaoStream_WriteMBS( self->errorStream, "ERROR: can not open file \"" );
-	DaoStream_WriteMBS( self->errorStream, fname->mbs );
-	DaoStream_WriteMBS( self->errorStream, "\".\n" );
+	if( DaoFile_ReadAll( Dao_OpenFile( fname->chars, "r" ), source, 1 ) ) return 1;
+	DaoStream_WriteChars( self->errorStream, "ERROR: can not open file \"" );
+	DaoStream_WriteChars( self->errorStream, fname->chars );
+	DaoStream_WriteChars( self->errorStream, "\".\n" );
 	return 0;
 }
-void SplitByWhiteSpaces( const char *chs, DArray *tokens )
+/* modules/debugger */
+DAO_DLL void SplitByWhiteSpaces( const char *chs, DList *tokens )
 {
-	DString temp = DString_WrapMBS( chs );
-	DString *tok = DString_New(1);
+	DString temp = DString_WrapChars( chs );
+	DString *tok = DString_New();
 	DString *str = & temp;
 	daoint i, j, k=0, size = str->size;
-	DArray_Clear( tokens );
-	if( (j=DString_FindChar( str, '\1', k )) != MAXSIZE ){
-		while( (j=DString_FindChar( str, '\1', k )) != MAXSIZE ){
+	DList_Clear( tokens );
+	if( (j=DString_FindChar( str, '\1', k )) != DAO_NULLPOS ){
+		while( (j=DString_FindChar( str, '\1', k )) != DAO_NULLPOS ){
 			if( j > k ){
 				DString_SubString( str, tok, k, j-k );
-				DArray_Append( tokens, tok );
+				DList_Append( tokens, tok );
 			}
 			k = j + 1;
 		}
 		if( k < str->size ){
 			DString_SubString( str, tok, k, str->size-k );
-			DArray_Append( tokens, tok );
+			DList_Append( tokens, tok );
 		}
 		DString_Delete( tok );
 		return;
@@ -668,22 +758,25 @@ void SplitByWhiteSpaces( const char *chs, DArray *tokens )
 			continue;
 		}else if( isspace( chs[i] ) ){
 			if( tok->size > 0 ){
-				DArray_Append( tokens, tok );
+				DList_Append( tokens, tok );
 				DString_Clear( tok );
 			}
 			continue;
 		}
 		DString_AppendChar( tok, chs[i] );
 	}
-	if( tok->size > 0 ) DArray_Append( tokens, tok );
+	if( tok->size > 0 ) DList_Append( tokens, tok );
 	DString_Delete( tok );
 }
 
+static void DaoConfigure_FromFile( const char *name );
+int DaoVmSpace_TryInitDebugger( DaoVmSpace *self, const char *module );
+int DaoVmSpace_TryInitProfiler( DaoVmSpace *self, const char *module );
 int DaoVmSpace_TryInitJIT( DaoVmSpace *self, const char *module );
 int DaoVmSpace_ParseOptions( DaoVmSpace *self, const char *options )
 {
-	DString *str = DString_New(1);
-	DArray *array = DArray_New(D_STRING);
+	DString *str = DString_New();
+	DList *array = DList_New( DAO_DATA_STRING );
 	DaoNamespace *ns;
 	daoint i, j;
 
@@ -695,310 +788,321 @@ int DaoVmSpace_ParseOptions( DaoVmSpace *self, const char *options )
 			DString_AppendChar( self->mainSource, ' ' );
 			continue;
 		}
-		if( token->mbs[0] =='-' && token->size >1 && token->mbs[1] =='-' ){
-			if( strcmp( token->mbs, "--help" ) ==0 ){
-				self->options |= DAO_EXEC_HELP;
-			}else if( strcmp( token->mbs, "--version" ) ==0 ){
-				self->options |= DAO_EXEC_VINFO;
-			}else if( strcmp( token->mbs, "--eval" ) ==0 ){
+		if( token->chars[0] =='-' && token->size >1 && token->chars[1] =='-' ){
+			if( strcmp( token->chars, "--help" ) ==0 ){
+				self->options |= DAO_OPTION_HELP;
+			}else if( strcmp( token->chars, "--version" ) ==0 ){
+				self->options |= DAO_OPTION_VINFO;
+			}else if( strcmp( token->chars, "--eval" ) ==0 ){
 				self->evalCmdline = 1;
 				DString_Clear( self->mainSource );
-			}else if( strcmp( token->mbs, "--debug" ) ==0 ){
-				self->options |= DAO_EXEC_DEBUG;
-			}else if( strcmp( token->mbs, "--interactive" ) ==0 ){
-				self->options |= DAO_EXEC_INTERUN;
-			}else if( strcmp( token->mbs, "--list-code" ) ==0 ){
-				self->options |= DAO_EXEC_LIST_BC;
-			}else if( strcmp( token->mbs, "--compile" ) ==0 ){
-				self->options |= DAO_EXEC_COMP_BC;
-			}else if( strcmp( token->mbs, "--archive" ) ==0 ){
-				self->options |= DAO_EXEC_ARCHIVE;
-			}else if( strcmp( token->mbs, "--jit" ) ==0 ){
-				self->options |= DAO_EXEC_JIT;
+			}else if( strcmp( token->chars, "--interactive" ) ==0 ){
+				self->options |= DAO_OPTION_INTERUN;
+			}else if( strcmp( token->chars, "--debug" ) ==0 ){
+				self->options |= DAO_OPTION_DEBUG;
+			}else if( strcmp( token->chars, "--profile" ) ==0 ){
+				self->options |= DAO_OPTION_PROFILE;
+			}else if( strcmp( token->chars, "--restart" ) ==0 ){
+			}else if( strcmp( token->chars, "--list-code" ) ==0 ){
+				self->options |= DAO_OPTION_LIST_BC;
+			}else if( strcmp( token->chars, "--compile" ) ==0 ){
+				self->options |= DAO_OPTION_COMP_BC;
+			}else if( strcmp( token->chars, "--archive" ) ==0 ){
+				self->options |= DAO_OPTION_ARCHIVE;
+			}else if( strcmp( token->chars, "--jit" ) ==0 ){
+				self->options |= DAO_OPTION_JIT;
 				daoConfig.jit = 1;
-			}else if( strstr( token->mbs, "--module=" ) == token->mbs ){
-				if( self->preloadModules == NULL ) self->preloadModules = DArray_New(D_VALUE);
-				if( (ns = DaoVmSpace_Load( self, token->mbs + 9 )) ){
-					DArray_Append( self->preloadModules, ns );
-					DArray_Append( self->mainNamespace->namespaces, ns );
+			}else if( strstr( token->chars, "--threads=" ) == token->chars ){
+				daoConfig.cpu = strtol( token->chars + 10, 0, 0 );
+			}else if( strstr( token->chars, "--path=" ) == token->chars ){
+				DaoVmSpace_AddPath( self, token->chars + 7 );
+			}else if( strstr( token->chars, "--module=" ) == token->chars ){
+				if( self->preloadModules == NULL ) self->preloadModules = DList_New( DAO_DATA_VALUE );
+				if( (ns = DaoVmSpace_Load( self, token->chars + 9 )) ){
+					DList_Append( self->preloadModules, ns );
+					DList_Append( self->mainNamespace->namespaces, ns );
 					DaoNamespace_UpdateLookupTable( self->mainNamespace );
 				}else{
-					DaoStream_WriteMBS( self->errorStream, "Preloading failed for module: " );
-					DaoStream_WriteMBS( self->errorStream, token->mbs );
-					DaoStream_WriteMBS( self->errorStream, ";\n" );
+					DaoStream_WriteChars( self->errorStream, "Preloading failed for module: " );
+					DaoStream_WriteChars( self->errorStream, token->chars );
+					DaoStream_WriteChars( self->errorStream, ";\n" );
 				}
+			}else if( strstr( token->chars, "--config=" ) == token->chars ){
+				DaoConfigure_FromFile( token->chars + 9 );
 			}else if( token->size ){
-				DaoStream_WriteMBS( self->errorStream, "Unknown option: " );
-				DaoStream_WriteMBS( self->errorStream, token->mbs );
-				DaoStream_WriteMBS( self->errorStream, ";\n" );
+				DaoStream_WriteChars( self->errorStream, "Unknown option: " );
+				DaoStream_WriteChars( self->errorStream, token->chars );
+				DaoStream_WriteChars( self->errorStream, ";\n" );
 			}
-		}else if( strcmp( token->mbs, "-O0" ) ==0 ){
+		}else if( strcmp( token->chars, "-O0" ) ==0 ){
 			daoConfig.optimize = 0;
-		}else if( strcmp( token->mbs, "-O1" ) ==0 ){
+		}else if( strcmp( token->chars, "-O1" ) ==0 ){
 			daoConfig.optimize = 1;
 		}else{
 			daoint len = token->size;
 			DString_Clear( str );
 			for( j=0; j<len; j++ ){
-				switch( token->mbs[j] ){
-				case 'h' : self->options |= DAO_EXEC_HELP;      break;
-				case 'v' : self->options |= DAO_EXEC_VINFO;     break;
-				case 'd' : self->options |= DAO_EXEC_DEBUG;     break;
-				case 'i' : self->options |= DAO_EXEC_INTERUN;   break;
-				case 'l' : self->options |= DAO_EXEC_LIST_BC;   break;
-				case 'c' : self->options |= DAO_EXEC_COMP_BC;   break;
-				case 'a' : self->options |= DAO_EXEC_ARCHIVE;   break;
-				case 's' : self->options |= DAO_EXEC_SAFE;
-						   daoConfig.safe = 1;
-						   break;
-				case 'j' : self->options |= DAO_EXEC_JIT;
+				switch( token->chars[j] ){
+				case 'h' : self->options |= DAO_OPTION_HELP;      break;
+				case 'v' : self->options |= DAO_OPTION_VINFO;     break;
+				case 'i' : self->options |= DAO_OPTION_INTERUN;   break;
+				case 'd' : self->options |= DAO_OPTION_DEBUG;     break;
+				case 'p' : self->options |= DAO_OPTION_PROFILE;   break;
+				case 'l' : self->options |= DAO_OPTION_LIST_BC;   break;
+				case 'c' : self->options |= DAO_OPTION_COMP_BC;   break;
+				case 'a' : self->options |= DAO_OPTION_ARCHIVE;   break;
+				case 'j' : self->options |= DAO_OPTION_JIT;
 						   daoConfig.jit = 1;
-						   break;
-				case 'T' : self->options |= DAO_EXEC_NO_TC;
-						   daoConfig.typedcode = 0;
 						   break;
 				case 'e' : self->evalCmdline = 1;
 						   DString_Clear( self->mainSource );
 						   break;
+				case 'r' : break;
 				case '-' : break;
 				default :
-						   if( token->mbs[j] ){
-							   DString_AppendChar( str, token->mbs[j] );
+						   if( token->chars[j] ){
+							   DString_AppendChar( str, token->chars[j] );
 							   DString_AppendChar( str, ' ' );
 						   }
 						   break;
 				}
 			}
 			if( str->size > 0 ){
-				DaoStream_WriteMBS( self->errorStream, "Unknown option: " );
-				DaoStream_WriteMBS( self->errorStream, str->mbs );
-				DaoStream_WriteMBS( self->errorStream, ";\n" );
+				DaoStream_WriteChars( self->errorStream, "Unknown option: " );
+				DaoStream_WriteChars( self->errorStream, str->chars );
+				DaoStream_WriteChars( self->errorStream, ";\n" );
 			}
 		}
 	}
-	if( self->options & DAO_EXEC_DEBUG ) daoConfig.optimize = 0;
+	if( self->options & DAO_OPTION_DEBUG ) daoConfig.optimize = 0;
 	DString_Delete( str );
-	DArray_Delete( array );
-	if( daoConfig.jit && dao_jit.Compile == NULL && DaoVmSpace_TryInitJIT( self, NULL ) == 0 ){
-		DaoStream_WriteMBS( self->errorStream, "Failed to enable Just-In-Time compiling!\n" );
-	}
+	DList_Delete( array );
+	if( daoConfig.jit && dao_jit.Compile == NULL ) DaoVmSpace_TryInitJIT( self, NULL );
+	if( self->options & DAO_OPTION_PROFILE ) DaoVmSpace_TryInitProfiler( self, NULL );
+	if( self->options & DAO_OPTION_DEBUG ) DaoVmSpace_TryInitDebugger( self, NULL );
 	return 1;
 }
 
-static DaoValue* DaoParseNumber( const char *s, DaoValue *value )
-{
-	if( strchr( s, 'e' ) != NULL ){
-		value->type = DAO_FLOAT;
-		value->xFloat.value = strtod( s, 0 );
-	}else if( strchr( s, 'E' ) != NULL ){
-		value->type = DAO_DOUBLE;
-		value->xDouble.value = strtod( s, 0 );
-	}else if( strchr( s, '.' ) != NULL ){
-		int len = strlen( s );
-		if( strstr( s, "00" ) == s + (len-2) ){
-			value->type = DAO_DOUBLE;
-			value->xDouble.value = strtod( s, 0 );
-		}else{
-			value->type = DAO_FLOAT;
-			value->xFloat.value = strtod( s, 0 );
-		}
-	}else{
-		value->type = DAO_INTEGER;
-		value->xInteger.value = strtod( s, 0 );
-	}
-	return value;
-}
 
 static void DaoVmSpace_MakePath( DaoVmSpace *self, DString *path );
-static DaoNamespace* DaoVmSpace_LoadDaoModuleExt( DaoVmSpace *self, DString *p, DArray *a, int run );
+static DaoNamespace* DaoVmSpace_LoadDaoModuleExt( DaoVmSpace *self, DString *p, DList *a, int run );
 static DaoNamespace* DaoVmSpace_LoadDllModule( DaoVmSpace *self, DString *libpath );
 
 static void DaoVmSpace_ParseArguments( DaoVmSpace *self, DaoNamespace *ns,
-		const char *file, DArray *args, DArray *argNames, DArray *argValues )
+		const char *file, DList *args, DList *argNames, DList *argValues )
 {
-	DString *str = DString_New(1);
-	DString *key = DString_New(1);
-	DString *val = DString_New(1);
-	DArray *array = args;
+	DString *str = DString_New();
+	DString *key = DString_New();
+	DString *val = DString_New();
+	DList *array = args;
 	daoint i, tk, offset = 0;
 	int eq = 0;
 
 	if( array == NULL && file ){
-		array = DArray_New(D_STRING);
+		array = DList_New( DAO_DATA_STRING );
 		SplitByWhiteSpaces( file, array );
 		DString_Assign( ns->name, array->items.pString[0] );
 	}
 	DString_Assign( val, array->items.pString[0] );
 	DaoVmSpace_MakePath( self, ns->name );
-	DaoNamespace_SetName( ns, ns->name->mbs ); /* to update ns->path and ns->file; */
+	DaoNamespace_SetName( ns, ns->name->chars ); /* to update ns->path and ns->file; */
 	i = 1;
 	while( i < array->size ){
 		DString *s = array->items.pString[i];
 		i ++;
 		offset = 0;
-		if( s->mbs[0] == '-' ){
+		if( s->chars[0] == '-' ){
 			offset += 1;
-			if( s->mbs[1] == '-' ) offset += 1;
+			if( s->chars[1] == '-' ) offset += 1;
 		}
-		tk = DaoToken_Check( s->mbs+offset, s->size-offset, & eq );
-		if( tk == DTOK_IDENTIFIER && s->mbs[eq+offset] == '=' ){
+		tk = DaoToken_Check( s->chars+offset, s->size-offset, & eq );
+		if( tk == DTOK_IDENTIFIER && s->chars[eq+offset] == '=' ){
 			DString_SubString( s, key, offset, eq );
 			DString_SubString( s, val, eq+offset+1, s->size-offset-eq );
-			DArray_Append( argNames, key );
-			DArray_Append( argValues, val );
+			DList_Append( argNames, key );
+			DList_Append( argValues, val );
 		}else if( tk == DTOK_IDENTIFIER && offset && i < array->size ){
 			DString_SubString( s, key, offset, s->size-offset );
 			DString_Assign( val, array->items.pString[i] );
-			DArray_Append( argNames, key );
-			DArray_Append( argValues, val );
+			DList_Append( argNames, key );
+			DList_Append( argValues, val );
 			i += 1;
 		}else{
 			DString_Clear( key );
 			DString_Assign( val, s );
-			DArray_Append( argNames, key );
-			DArray_Append( argValues, s );
+			DList_Append( argNames, key );
+			DList_Append( argValues, s );
 		}
 	}
-	if( args == NULL ) DArray_Delete( array );
+	if( args == NULL ) DList_Delete( array );
 	DString_Delete( key );
 	DString_Delete( val );
 	DString_Delete( str );
 }
-static DaoRoutine* DaoVmSpace_FindExplicitMain( DaoNamespace *ns, DArray *argNames, DArray *argValues )
+static DaoValue* DaoVmSpace_MakeNameArgument( DaoNamespace *NS, DString *name, DaoValue *argv )
 {
-	DArray *types;
-	DString *name;
-	DaoRoutine *rout = NULL;
-	int i, j, count = 0;
-
-	types = DArray_New(0);
-	name = DString_New(1);
-
-	DString_SetMBS( name, "main" );
-	i = DaoNamespace_FindConst( ns, name );
-	if( i >=0 ){
-		DaoValue *value = DaoNamespace_GetConst( ns, i );
-		if( value->type == DAO_ROUTINE ) rout = & value->xRoutine;
-	}
-	if( rout == NULL ){
-		DArray_Delete( types );
-		DString_Delete( name );
-		return NULL;
-	}
-	for( i=0; i<argNames->size; i++ ){
-		DaoType *type = dao_type_string;
-		char *chars = argValues->items.pString[i]->mbs;
-		if( chars[0] == '+' || chars[0] == '-' ) chars ++;
-		if( DaoToken_IsNumber( chars, 0 ) ) type = dao_type_double;
-		if( argNames->items.pString[i]->size ){
-			DString *S = argNames->items.pString[i];
-			type = DaoNamespace_MakeType( ns, S->mbs, DAO_PAR_NAMED, (DaoValue*)type, NULL, 0 );
-		}
-		DArray_Append( types, type );
-	}
-	return DaoRoutine_ResolveByType( rout, NULL, types->items.pType, types->size, DVM_CALL );
+	DaoEnum *em;
+	DaoTuple *tuple;
+	DaoType *type, *types[2];
+	DString *symbol = DString_New();
+	DString_AppendChar( symbol, '$' );
+	DString_Append( symbol, name );
+	type = DaoNamespace_MakeSymbolType( NS, symbol->chars );
+	em = DaoEnum_New( type, 1 );
+	types[0] = type;
+	types[1] = dao_type_string;
+	type = DaoNamespace_MakeType( NS, "tuple", DAO_TUPLE, NULL, types, 2 );
+	tuple = DaoTuple_Create( type, 2, 0 );
+	DaoTuple_SetItem( tuple, (DaoValue*) em, 0 );
+	DaoTuple_SetItem( tuple, argv, 1 );
+	DaoGC_TryDelete( (DaoValue*) em );
+	return (DaoValue*) tuple;
 }
-static void DaoList_SetArgument( DaoList *self, int i, DaoType *type, DString *value, DaoValue *sval )
+static int DaoList_SetArgument( DaoList *self, int i, DaoType *type, DString *name, DaoValue *string, DaoNamespace *NS )
 {
+	int isnum = DaoToken_IsNumber( string->xString.value->chars, string->xString.value->size );
 	DaoValue ival = {DAO_INTEGER};
 	DaoValue fval = {DAO_FLOAT};
-	DaoValue dval = {DAO_DOUBLE};
+	DaoValue *argv;
 
 	switch( type->tid ){
 	case DAO_INTEGER :
-		ival.xInteger.value = strtoll( value->mbs, 0, 0 );
+		ival.xInteger.value = strtoll( string->xString.value->chars, 0, 0 );
 		DaoList_SetItem( self, & ival, i );
-		break;
+		return 10 * isnum;
 	case DAO_FLOAT :
-		fval.xFloat.value = strtod( value->mbs, 0 );
+		fval.xFloat.value = strtod( string->xString.value->chars, 0 );
 		DaoList_SetItem( self, & fval, i );
-		break;
-	case DAO_DOUBLE :
-		dval.xDouble.value = strtod( value->mbs, 0 );
-		DaoList_SetItem( self, & dval, i );
-		break;
+		return 10 * isnum;
 	default :
-		DString_Assign( sval->xString.data, value );
-		DaoList_SetItem( self, sval, i );
+		argv = string;
+		if( name && name->size ) argv = DaoVmSpace_MakeNameArgument( NS, name, argv );
+		if( type && DaoType_MatchValue( type, argv, NULL ) == 0 ) return 0;
+		DaoList_SetItem( self, argv, i );
 		break;
 	}
+	return 1;
 }
-static int DaoVmSpace_ConvertArguments( DaoVmSpace *self, DaoRoutine *routine, DArray *argNames, DArray *argValues )
+static int DaoVmSpace_ConvertArguments( DaoRoutine *routine, DList *argNames, DList *argValues )
 {
-	DString *str, *val;
+	DString *val;
 	DaoValue sval = {DAO_STRING};
 	DaoNamespace *ns = routine->nameSpace;
 	DaoList *argParams = ns->argParams;
 	DaoType *routype = routine->routType;
 	DaoType *type;
-	int i, j;
+	int set[2*DAO_MAX_PARAM];
+	int i, j, s, score = 1;
 
-	val = DString_New(1);
-	sval.xString.data = val;
+	val = DString_New();
+	sval.xString.value = val;
 	DaoList_Clear( argParams );
 
-	for(i=0; i<argNames->size; ++i) DaoList_Append( argParams, dao_none_value );
+	for(i=0; i<routype->nested->size - routype->variadic; ++i){
+		DaoList_Append( argParams, routine->routConsts->value->items.pValue[i] );
+		set[i] = 0;
+	}
 	for(i=0; i<argNames->size; ++i){
+		DaoValue *argv = & sval;
 		DString *name = argNames->items.pString[i];
 		DString *value = argValues->items.pString[i];
 		int ito = i;
 		type = routype->nested->items.pType[ito];
+		DString_Assign( val, value );
 		if( type->tid == DAO_PAR_VALIST ){
+			DaoType *type2 = (DaoType*) type->aux;
 			for(j=i; j<argNames->size; ++j){
-				DaoValue *argv = & sval;
 				name = argNames->items.pString[j];
 				value = argValues->items.pString[j];
 				DString_Assign( val, value );
-				if( type->aux ){
-					DaoList_SetArgument( argParams, j, (DaoType*) type->aux, value, & sval );
-					continue;
-				}
-				if( name->size ){
-					DaoNameValue *nameva = DaoNameValue_New( name, argv );
-					DaoValue *st = (DaoValue*) dao_type_string;
-					type = DaoNamespace_MakeType( ns, name->mbs, DAO_PAR_NAMED, st, NULL, 0 );
-					nameva->unitype = type;
-					GC_IncRC( nameva->unitype );
-					argv = (DaoValue*) nameva;
-				}
-				DaoList_SetItem( argParams, argv, j );
+				DaoList_Append( argParams, NULL );
+				s = DaoList_SetArgument( argParams, j, type2, name, argv, ns );
+				if( s == 0 ) goto InvalidArgument;
+				score += s;
 			}
 			break;
 		}
 		if( name->size ){
 			DNode *node = DMap_Find( routype->mapNames, name );
-			if( node ) ito = node->value.pInt;
+			if( node ){
+				ito = node->value.pInt;
+				name = NULL;
+			}
 		}
+		if( ito >= routype->nested->size ) goto InvalidArgument;
 		type = (DaoType*) routype->nested->items.pType[ito]->aux;
-		if( argParams->items.items.pValue[ito]->type != DAO_NONE ){
-			DaoStream_WriteMBS( self->errorStream, "duplicated argument" );
-			goto Failed;
-		}
-		DaoList_SetArgument( argParams, ito, type, value, & sval );
+		if( set[ito] ) goto InvalidArgument;
+		set[ito] = DaoList_SetArgument( argParams, ito, type, name, argv, ns );
+		if( set[ito] == 0 ) goto InvalidArgument;
+		score += 10 * set[ito];
+	}
+	for(i=0; i<routype->nested->size - routype->variadic; ++i){
+		DaoType *partype = routine->routType->nested->items.pType[i];
+		if( set[i] == 0 && partype->tid != DAO_PAR_DEFAULT ) goto InvalidArgument;
 	}
 	DString_Delete( val );
-	return 1;
-Failed:
+	return score;
+InvalidArgument:
 	DString_Delete( val );
 	return 0;
+}
+static DaoRoutine* DaoVmSpace_FindExplicitMain( DaoNamespace *ns, DList *argNames, DList *argValues, int *error )
+{
+	DString *name;
+	DaoRoutine *rout = NULL;
+	DaoRoutine *best = NULL;
+	DaoRoutine **routs = NULL;
+	int i, max = 0, count = 0;
+
+	name = DString_New();
+
+	*error = 0;
+	DString_SetChars( name, "main" );
+	i = DaoNamespace_FindConst( ns, name );
+	if( i >= 0 ) rout = DaoValue_CastRoutine( DaoNamespace_GetConst( ns, i ) );
+	if( rout == NULL ){
+		DString_Delete( name );
+		return NULL;
+	}
+	if( rout->overloads ){
+		routs = rout->overloads->routines->items.pRoutine;
+		count = rout->overloads->routines->size;
+	}else{
+		routs = & rout;
+		count = 1;
+	}
+	for(i=0; i<count; ++i){
+		int s = DaoVmSpace_ConvertArguments( routs[i], argNames, argValues );
+		if( s > max ){
+			best = routs[i];
+			max = s;
+		}
+	}
+	if( best ){
+		DaoVmSpace_ConvertArguments( best, argNames, argValues );
+	}else{
+		*error = 1;
+	}
+	DString_Delete( name );
+	return best;
 }
 
 DaoNamespace* DaoVmSpace_LoadEx( DaoVmSpace *self, const char *file, int run )
 {
-	DArray *args = DArray_New(D_STRING);
-	DString *path = DString_New(1);
+	DList *args = DList_New( DAO_DATA_STRING );
+	DString *path = DString_New();
 	DaoNamespace *ns = NULL;
 
 	SplitByWhiteSpaces( file, args );
 	DString_Assign( path, args->items.pString[0] );
-	switch( DaoVmSpace_CompleteModuleName( self, path ) ){
+	switch( DaoVmSpace_CompleteModuleName( self, path, DAO_MODULE_ANY ) ){
 	case DAO_MODULE_DAC :
 	case DAO_MODULE_DAO : ns = DaoVmSpace_LoadDaoModuleExt( self, path, args, run ); break;
 	case DAO_MODULE_DLL : ns = DaoVmSpace_LoadDllModule( self, path ); break;
 	case DAO_MODULE_ANY : ns = DaoVmSpace_LoadDaoModuleExt( self, path, args, run ); break; /* any suffix */
 	default : break;
 	}
-	DArray_Delete( args );
+	DList_Delete( args );
 	DString_Delete( path );
 	if( ns == NULL ) return 0;
 	return ns;
@@ -1020,9 +1124,10 @@ DaoNamespace* DaoVmSpace_LinkModule( DaoVmSpace *self, DaoNamespace *ns, const c
 
 static int CheckCodeCompletion( DString *source, DaoLexer *lexer )
 {
-	DArray *tokens = lexer->tokens;
+	DList *tokens = lexer->tokens;
 	int i, bcount, cbcount, sbcount, tki = 0, completed = 1;
-	DaoLexer_Tokenize( lexer, source->mbs, DAO_LEX_COMMENT|DAO_LEX_SPACE );
+
+	DaoLexer_Tokenize( lexer, source->chars, DAO_LEX_COMMENT|DAO_LEX_SPACE );
 	if( tokens->size ) tki = tokens->items.pToken[tokens->size-1]->type;
 	switch( tki ){
 	case DTOK_LB :
@@ -1058,36 +1163,37 @@ static void DaoVmSpace_Interun( DaoVmSpace *self, CallbackOnString callback )
 	DaoValue *value;
 	DaoNamespace *ns;
 	DaoLexer *lexer = DaoLexer_New();
-	DString *input = DString_New(1);
+	DString *input = DString_New();
+	DString *line = DString_New();
 	const char *varRegex = "^ %s* = %s* %S+";
 	const char *srcRegex = "^ %s* %w+ %. dao .* $";
 	const char *sysRegex = "^ %\\ %s* %w+ %s* .* $";
 	char *chs;
-	int ch, newline = 0;
-	DString_SetMBS( self->mainNamespace->name, "interactive codes" );
+	int ch;
+
+	DString_SetChars( self->mainNamespace->name, "interactive codes" );
 	self->mainNamespace->options |= DAO_NS_AUTO_GLOBAL;
 	ns = DaoVmSpace_LinkModule( self, self->mainNamespace, "help" );
 	value = ns ? DaoNamespace_FindData( ns, "help_message" ) : NULL;
-	if( value && value->type == DAO_STRING ) printf( "%s\n", DaoValue_TryGetMBString( value ) );
+	if( value && value->type == DAO_STRING ) printf( "%s\n", DaoValue_TryGetChars( value ) );
 	while(1){
 		DString_Clear( input );
 		DaoValue_Clear( self->mainProcess->stackValues );
 		if( self->ReadLine ){
-			chs = self->ReadLine( "(dao) " );
+			chs = self->ReadLine( "(dao) ", line );
 			if( chs == NULL ){
 				printf( "\n" );
 				break;
 			}
 			while( chs ){
-				DString_AppendMBS( input, chs );
+				DString_AppendChars( input, chs );
 				DString_AppendChar( input, '\n' );
-				dao_free( chs );
 				if( CheckCodeCompletion( input, lexer ) ){
-					DString_Trim( input );
-					if( input->size && self->AddHistory ) self->AddHistory( input->mbs );
+					DString_Trim( input, 1, 1, 0 );
+					if( input->size && self->AddHistory ) self->AddHistory( input->chars );
 					break;
 				}
-				chs = self->ReadLine( "..... " );
+				chs = self->ReadLine( "..... ", line );
 			}
 		}else{
 			printf( "(dao) " );
@@ -1104,96 +1210,174 @@ static void DaoVmSpace_Interun( DaoVmSpace *self, CallbackOnString callback )
 				ch = getchar();
 			}
 			if( ch == EOF ) clearerr( stdin );
-			DString_Trim( input );
+			DString_Trim( input, 1, 1, 0 );
 		}
 		if( input->size == 0 ) continue;
 		self->stopit = 0;
-		if( strcmp( input->mbs, "q" ) == 0 ){
+		if( strcmp( input->chars, "q" ) == 0 ){
 			break;
-		}else if( DString_MatchMBS( input, sysRegex, NULL, NULL ) ){
-			if( system( input->mbs+1 ) ==-1) printf( "shell command failed\n" );
-		}else if( DString_MatchMBS( input, srcRegex, NULL, NULL ) ){
-			DString_InsertMBS( input, "std.load(", 0, 0, 0 );
-			DString_AppendMBS( input, ", 0, 1 )" );
+		}else if( DString_Match( input, sysRegex, NULL, NULL ) ){
+			if( system( input->chars+1 ) ==-1) printf( "shell command failed\n" );
+		}else if( DString_Match( input, srcRegex, NULL, NULL ) ){
+			DString_InsertChars( input, "std.load(", 0, 0, 0 );
+			DString_AppendChars( input, ", 0, 1 )" );
 			if( callback ){
-				(*callback)( input->mbs );
+				(*callback)( input->chars );
 				continue;
 			}
-			DaoProcess_Eval( self->mainProcess, self->mainNamespace, input->mbs );
-		}else if( DString_MatchMBS( input, varRegex, NULL, NULL ) ){
-			DString_ChangeMBS( input, "^ %s* = %s*", "", 0 );
-			DString_InsertMBS( input, "return ", 0, 0, 0 );
+			DaoProcess_Eval( self->mainProcess, self->mainNamespace, input->chars );
+		}else if( DString_Match( input, varRegex, NULL, NULL ) ){
+			DString_Change( input, "^ %s* = %s*", "", 0 );
+			DString_InsertChars( input, "return ", 0, 0, 0 );
 			if( callback ){
-				(*callback)( input->mbs );
+				(*callback)( input->chars );
 				continue;
 			}
-			DaoProcess_Eval( self->mainProcess, self->mainNamespace, input->mbs );
+			DaoProcess_Eval( self->mainProcess, self->mainNamespace, input->chars );
 		}else{
 			if( callback ){
-				(*callback)( input->mbs );
+				(*callback)( input->chars );
 				continue;
 			}
-			DaoProcess_Eval( self->mainProcess, self->mainNamespace, input->mbs );
+			DaoProcess_Eval( self->mainProcess, self->mainNamespace, input->chars );
 		}
 #ifdef DAO_WITH_CONCURRENT
+		if( self->mainProcess->status >= DAO_PROCESS_SUSPENDED ){
+			if( DaoCallServer_GetThreadCount() == 0 ) DaoCallServer_AddThread( NULL, NULL );
+		}
 		DaoCallServer_Join();
 #endif
 		/*
-		   printf( "%s\n", input->mbs );
+		   printf( "%s\n", input->chars );
 		 */
 	}
 	self->mainNamespace->options &= ~DAO_NS_AUTO_GLOBAL;
+	DString_Delete( line );
 	DString_Delete( input );
 	DaoLexer_Delete( lexer );
 }
 
-static void DaoVmSpace_ExeCmdArgs( DaoVmSpace *self )
+static void DaoVmSpace_PrintCode( DaoVmSpace *self )
 {
+	DMap *printed = DHash_New(0,0);
 	DaoNamespace *ns = self->mainNamespace;
-	daoint i;
-	if( self->options & DAO_EXEC_VINFO ){
-		DaoStream_WriteNewLine( self->stdioStream );
-		DaoStream_WriteMBS( self->stdioStream, dao_copy_notice );
-		DaoStream_WriteNewLine( self->stdioStream );
-	}
-	if( self->options & DAO_EXEC_HELP )  DaoStream_WriteMBS( self->stdioStream, cmd_help );
-	DaoStream_Flush( self->stdioStream );
-
-	if( self->options & DAO_EXEC_LIST_BC ){
+	daoint i, j;
+	if( self->options & DAO_OPTION_LIST_BC ){
 		for(i=ns->cstUser; i<ns->constants->size; i++){
 			DaoValue *p = ns->constants->items.pConst[i]->value;
-			if( p->type == DAO_ROUTINE && & p->xRoutine != ns->mainRoutine ){
-				DaoRoutine_PrintCode( & p->xRoutine, self->stdioStream );
+			if( p->type == DAO_ROUTINE && p != (DaoValue*) ns->mainRoutine ){
+				DaoRoutine *routine = (DaoRoutine*) p;
+				if( routine->overloads == NULL ){
+					if( DMap_Find( printed, routine ) ) continue;
+					DMap_Insert( printed, routine, NULL );
+					DaoRoutine_PrintCode( routine, self->stdioStream );
+				}else{
+					for(j=0; j<routine->overloads->routines->size; ++j){
+						DaoRoutine *rout = routine->overloads->routines->items.pRoutine[j];
+						if( DMap_Find( printed, rout ) ) continue;
+						DMap_Insert( printed, rout, NULL );
+						DaoRoutine_PrintCode( rout, self->stdioStream );
+					}
+				}
 			}else if( p->type == DAO_CLASS ){
+				if( DMap_Find( printed, p ) ) continue;
+				DMap_Insert( printed, p, NULL );
+				DaoStream_WriteChars( self->stdioStream, "\n\n" );
 				DaoClass_PrintCode( & p->xClass, self->stdioStream );
 			}
 		}
 		DaoStream_Flush( self->stdioStream );
 		if( ns->mainRoutine ) DaoRoutine_PrintCode( ns->mainRoutine, self->stdioStream );
-		if( ( self->options & DAO_EXEC_INTERUN ) && self->userHandler == NULL )
-			DaoVmSpace_Interun( self, NULL );
+	}
+	DMap_Delete( printed );
+}
+static void DaoVmSpace_ExeCmdArgs( DaoVmSpace *self )
+{
+	if( self->options & DAO_OPTION_VINFO ){
+		DaoStream_WriteNewLine( self->stdioStream );
+		DaoStream_WriteChars( self->stdioStream, dao_copy_notice );
+		DaoStream_WriteNewLine( self->stdioStream );
+	}
+	if( self->options & DAO_OPTION_HELP )  DaoStream_WriteChars( self->stdioStream, cmd_help );
+	DaoStream_Flush( self->stdioStream );
+
+	DaoVmSpace_PrintCode( self );
+}
+void DaoVmSpace_ConvertPath( DaoVmSpace *self, DString *path )
+{
+	char *daodir = getenv( "DAO_DIR" );
+	char *home = getenv( "HOME" );
+
+	if( DString_Find( path, self->startPath, 0 ) == 0 ){
+		DString_ReplaceChars( path, "$(CMD_DIR)/", 0, self->startPath->size );
+	}else if( DString_Find( path, self->daoBinPath, 0 ) == 0 ){
+		DString_ReplaceChars( path, "$(EXE_DIR)/", 0, self->daoBinPath->size );
+	}else if( daodir && DString_FindChars( path, daodir, 0 ) == 0 ){
+		DString_ReplaceChars( path, "$(DAO_DIR)", 0, strlen(daodir) );
+	}else if( home && DString_FindChars( path, home, 0 ) == 0 ){
+		DString_ReplaceChars( path, "$(HOME)", 0, strlen(home) );
 	}
 }
-void DaoVmSpace_SaveByteCodes( DaoVmSpace *self, DaoNamespace *ns )
+#if 0
+void DaoVmSpace_ConvertPath2( DaoVmSpace *self, DString *path )
+{
+	char *daodir = getenv( "DAO_DIR" );
+	char *home = getenv( "HOME" );
+
+	if( DString_FindChars( path, "$(CMD_DIR)/", 0 ) == 0 ){
+		DString_Replace( path, self->startPath, 0, strlen( "$(CMD_DIR)/" ) );
+	}else if( DString_FindChars( path, "$(EXE_DIR)/", 0 ) == 0 ){
+		DString_ReplaceChars( path, self->daoBinPath, 0, strlen( "$(EXE_DIR)/" ) );
+	}else if( daodir && DString_FindChars( path, "$(DAO_DIR)", 0 ) == 0 ){
+		DString_ReplaceChars( path, daodir, 0, strlen( "$(DAO_DIR)" ) );
+	}else if( home && DString_FindChars( path, "$(HOME)", 0 ) == 0 ){
+		DString_ReplaceChars( path, home, 0, strlen( "$(HOME)" ) );
+	}
+}
+#endif
+void DaoVmSpace_SaveByteCodes( DaoVmSpace *self, DaoByteCoder *coder, DaoNamespace *ns )
 {
 	FILE *fout;
-	DString *bytecodes = DString_New(1);
-	DaoByteEncoder *encoder = DaoByteEncoder_New();
+	DString *fname = DString_New();
+	DString *output = DString_New();
 
-	DString_Append( bytecodes, ns->name );
-	if( bytecodes->size > ns->lang->size ) bytecodes->size -= ns->lang->size;
-	DString_AppendMBS( bytecodes, "dac" );
-	fout = fopen( bytecodes->mbs, "w+" );
-	bytecodes->size = 0;
-	DaoByteEncoder_Encode( encoder, ns, bytecodes );
-	DaoFile_WriteString( fout, bytecodes );
-	DaoByteEncoder_Delete( encoder );
-	DString_Delete( bytecodes );
+	DString_Append( fname, ns->name );
+	if( fname->size > ns->lang->size ) fname->size -= ns->lang->size;
+	DString_AppendChars( fname, "dac" );
+	fout = Dao_OpenFile( fname->chars, "w+" );
+
+	DaoByteCoder_EncodeHeader( coder, ns->name->chars, output );
+	DaoByteCoder_EncodeToString( coder, output );
+
+	DaoFile_WriteString( fout, output );
+	DString_Delete( output );
 	fclose( fout );
+
+	DaoStream_WriteChars( self->stdioStream, "Source file: " );
+	DaoStream_WriteString( self->stdioStream, ns->name );
+	DaoStream_WriteChar( self->stdioStream, '\n' );
+	DaoStream_WriteChars( self->stdioStream, "Compiled to: " );
+	DaoStream_WriteString( self->stdioStream, fname );
+	DaoStream_WriteChars( self->stdioStream, "\n\n" );
+	DString_Delete( fname );
 }
 
-void DString_AppendUInt16( DString *bytecodes, int value );
-void DString_AppendUInt32( DString *bytecodes, int value );
+void DString_AppendUInt16( DString *bytecodes, int value )
+{
+	uchar_t bytes[2];
+	bytes[0] = (value >> 8) & 0xFF;
+	bytes[1] = value & 0xFF;
+	DString_AppendBytes( bytecodes, (char*) bytes, 2 );
+}
+void DString_AppendUInt32( DString *bytecodes, uint_t value )
+{
+	uchar_t bytes[4];
+	bytes[0] = (value >> 24) & 0xFF;
+	bytes[1] = (value >> 16) & 0xFF;
+	bytes[2] = (value >>  8) & 0xFF;
+	bytes[3] = value & 0xFF;
+	DString_AppendBytes( bytecodes, (char*) bytes, 4 );
+}
 
 int DaoDecodeUInt16( const char *data )
 {
@@ -1205,30 +1389,39 @@ int DaoDecodeUInt32( const char *data )
 	const uchar_t *p = (const uchar_t*) data;
 	return (p[0]<<24) + (p[1]<<16) + (p[2]<<8) + p[3];
 }
-static void DaoVmSpace_SaveArchive( DaoVmSpace *self, DArray *argValues )
+static void DaoVmSpace_SaveArchive( DaoVmSpace *self, DList *argValues )
 {
 	FILE *fin, *fout;
 	int i, count = 1;
 	int slen = strlen( DAO_DLL_SUFFIX );
 	DaoNamespace *ns = self->mainNamespace;
-	DString *archive = DString_New(1);
-	DString *data = DString_New(1);
+	DString *archive = DString_New();
+	DString *data = DString_New();
 
 	DString_Append( archive, ns->name );
 	if( archive->size > ns->lang->size ) archive->size -= ns->lang->size;
-	DString_AppendMBS( archive, "dar" );
-	fout = fopen( archive->mbs, "w+" );
+	DString_AppendChars( archive, "dar" );
+
+	DaoStream_WriteChars( self->stdioStream, "Creating Dao archive file: " );
+	DaoStream_WriteString( self->stdioStream, archive );
+	DaoStream_WriteChars( self->stdioStream, "\n" );
+
+	fout = Dao_OpenFile( archive->chars, "w+" );
 	archive->size = 0;
 
 	count = self->sourceArchive->size/2;
 	for(i=0; i<self->sourceArchive->size; i+=2){
 		DString *name = self->sourceArchive->items.pString[i];
 		DString *source = self->sourceArchive->items.pString[i+1];
+		DaoStream_WriteChars( self->stdioStream, "Adding to the archive: " );
+		DaoStream_WriteString( self->stdioStream, name );
+		DaoStream_WriteChars( self->stdioStream, "\n" );
+		DaoVmSpace_ConvertPath( self, name );
 		DString_AppendUInt16( archive, name->size );
 		DString_Append( archive, name );
 		DString_AppendUInt32( archive, source->size );
 		DString_Append( archive, source );
-		if( DString_FindMBS( name, DAO_DLL_SUFFIX, 0 ) != name->size - slen ){
+		if( DString_FindChars( name, DAO_DLL_SUFFIX, 0 ) != name->size - slen ){
 			// TODO:
 		}
 	}
@@ -1236,13 +1429,16 @@ static void DaoVmSpace_SaveArchive( DaoVmSpace *self, DArray *argValues )
 		DString *file = argValues->items.pString[i];
 		DString_Assign( data, file );
 		Dao_MakePath( self->pathWorking, data );
-		fin = fopen( data->mbs, "r" );
+		fin = Dao_OpenFile( data->chars, "r" );
 		if( fin == NULL ){
-			DaoStream_WriteMBS( self->errorStream, "WARNING: can not open resource file \"" );
-			DaoStream_WriteMBS( self->errorStream, data->mbs );
-			DaoStream_WriteMBS( self->errorStream, "\".\n" );
+			DaoStream_WriteChars( self->errorStream, "WARNING: can not open resource file \"" );
+			DaoStream_WriteChars( self->errorStream, data->chars );
+			DaoStream_WriteChars( self->errorStream, "\".\n" );
 			continue;
 		}
+		DaoStream_WriteChars( self->stdioStream, "Adding to the archive: " );
+		DaoStream_WriteString( self->stdioStream, data );
+		DaoStream_WriteChars( self->stdioStream, "\n" );
 		count += 1;
 		DaoFile_ReadAll( fin, data, 1 );
 		DString_AppendUInt16( archive, file->size );
@@ -1264,14 +1460,15 @@ void DaoVmSpace_LoadArchive( DaoVmSpace *self, DString *archive )
 {
 	DString *name;
 	DaoVModule module = { NULL, 0, NULL, NULL };
-	char *data = (char*) archive->mbs;
+	char *data = (char*) archive->chars;
 	int slen = strlen( DAO_DLL_SUFFIX );
 	int pos = 4, size = archive->size;
 	int i, m, n, files;
 
 	DString_Clear( self->mainSource );
 	if( size < 8 ) return;
-	name = DString_New(1);
+	name = DString_New();
+	data = (char*) archive->chars;
 	files = DaoDecodeUInt32( data + pos );
 	pos += 4;
 	for(i=0; i<files; ++i){
@@ -1280,15 +1477,15 @@ void DaoVmSpace_LoadArchive( DaoVmSpace *self, DString *archive )
 		if( (pos + 2 + m + 4) >= size ) break;
 		n = DaoDecodeUInt32( data + pos + 2 + m );
 		if( i == 0 ){
-			DString_SetMBS( self->mainSource, "/@/" );
-			DString_AppendDataMBS( self->mainSource, data + pos + 2, m );
-			DaoNamespace_SetName( self->mainNamespace, self->mainSource->mbs );
-			DString_SetDataMBS( self->mainSource, data + pos + 2 + m + 4, n );
+			DString_SetChars( self->mainSource, "/@/" );
+			DString_AppendBytes( self->mainSource, data + pos + 2, m );
+			DaoNamespace_SetName( self->mainNamespace, self->mainSource->chars );
+			DString_SetBytes( self->mainSource, data + pos + 2 + m + 4, n );
 		}else{
-			DString_SetDataMBS( name, data + pos + 2, m );
+			DString_SetBytes( name, data + pos + 2, m );
 			/* Ignore DLL modules: */
-			if( DString_FindMBS( name, DAO_DLL_SUFFIX, 0 ) != m - slen ){
-				module.name = name->mbs;
+			if( DString_FindChars( name, DAO_DLL_SUFFIX, 0 ) != m - slen ){
+				module.name = name->chars;
 				module.length = n;
 				module.data = (uchar_t*) data + pos + 2 + m + 4;
 				DaoVmSpace_AddVirtualModule( self, & module );
@@ -1313,162 +1510,183 @@ int DaoVmSpace_RunMain( DaoVmSpace *self, const char *file )
 	DaoProcess *vmp = self->mainProcess;
 	DaoStream *io = self->errorStream;
 	DaoRoutine *mainRoutine, *expMain = NULL;
-	DaoRoutine *rout = NULL;
 	DaoValue **ps;
-	DString *name;
-	DArray *argNames;
-	DArray *argValues;
+	DList *argNames;
+	DList *argValues;
 	size_t tm = 0;
 	daoint N;
-	int i, j, res;
+	int res;
 
 	if( file == NULL || file[0] ==0 || self->evalCmdline ){
-		DArray_PushFront( self->nameLoading, self->pathWorking );
-		DArray_PushFront( self->pathLoading, self->pathWorking );
+		DList_PushFront( self->nameLoading, self->pathWorking );
+		DList_PushFront( self->pathLoading, self->pathWorking );
 		if( self->evalCmdline ){
 			DaoRoutine *rout;
-			DString_SetMBS( self->mainNamespace->name, "command line codes" );
-			if( DaoProcess_Compile( vmp, ns, self->mainSource->mbs ) ==0 ) return 0;
+			DString_SetChars( self->mainNamespace->name, "command line codes" );
+			if( DaoProcess_Compile( vmp, ns, self->mainSource->chars ) ==0 ) return 0;
 			DaoVmSpace_ExeCmdArgs( self );
 			rout = ns->mainRoutines->items.pRoutine[ ns->mainRoutines->size-1 ];
 			if( DaoProcess_Call( vmp, rout, NULL, NULL, 0 ) ) return 0;
 		}else{
 			DaoVmSpace_ExeCmdArgs( self );
 		}
-		if( (self->options & DAO_EXEC_INTERUN) && self->userHandler == NULL )
+		if( (self->options & DAO_OPTION_INTERUN) && self->userHandler == NULL )
 			DaoVmSpace_Interun( self, NULL );
 		return 1;
 	}
-	argNames = DArray_New(D_STRING);
-	argValues = DArray_New(D_STRING);
+	argNames = DList_New( DAO_DATA_STRING );
+	argValues = DList_New( DAO_DATA_STRING );
 	DaoVmSpace_ParseArguments( self, ns, file, NULL, argNames, argValues );
-	DaoVmSpace_AddPath( self, ns->path->mbs );
-	DArray_PushFront( self->nameLoading, ns->name );
-	DArray_PushFront( self->pathLoading, ns->path );
-	DArray_PushFront( self->loadedModules, ns );
+	DaoVmSpace_AddPath( self, ns->path->chars );
+	DList_PushFront( self->nameLoading, ns->name );
+	DList_PushFront( self->pathLoading, ns->path );
+	DList_PushFront( self->loadedModules, ns );
 	if( DMap_Find( self->nsModules, ns->name ) == NULL ){
 		MAP_Insert( self->nsModules, ns->name, ns );
 	}
 
-	tm = Dao_FileChangedTime( ns->name->mbs );
+	tm = Dao_FileChangedTime( ns->name->chars );
 	ns->time = tm;
 
 	/* self->fileName may has been changed */
 	res = DaoVmSpace_ReadSource( self, ns->name, self->mainSource );
-	if( strncmp( self->mainSource->mbs, "\33\33\r\n", 4 ) == 0 ){
+	if( strncmp( self->mainSource->chars, "\33\33\r\n", 4 ) == 0 ){
 		DString *archive = DString_Copy( self->mainSource );
 		DaoVmSpace_LoadArchive( self, archive );
 		DString_Delete( archive );
 	}
-	if( self->options & DAO_EXEC_ARCHIVE ){
-		DArray_Append( self->sourceArchive, ns->name );
-		DArray_Append( self->sourceArchive, self->mainSource );
+	if( self->options & DAO_OPTION_ARCHIVE ){
+		DList_Append( self->sourceArchive, ns->name );
+		DList_Append( self->sourceArchive, self->mainSource );
 	}
-	if( self->mainSource->mbs[0] == DAO_BC_SIGNATURE[0] ){
-		DaoByteDecoder *decoder = DaoByteDecoder_New( self );
-		res = DaoByteDecoder_Decode( decoder, self->mainSource, ns );
-		DaoByteDecoder_Delete( decoder );
+	if( self->mainSource->chars[0] == DAO_BC_SIGNATURE[0] ){
+		DaoByteCoder *byteCoder = DaoVmSpace_AcquireByteCoder( self );
+		res = DaoByteCoder_Decode( byteCoder, self->mainSource );
+		if( self->options & DAO_OPTION_LIST_BC ) DaoByteCoder_Disassemble( byteCoder );
+		res = res && DaoByteCoder_Build( byteCoder, ns );
+		DaoVmSpace_ReleaseByteCoder( self, byteCoder );
 	}else{
-		res = res && DaoProcess_Compile( vmp, ns, self->mainSource->mbs );
-		if( res && (self->options & DAO_EXEC_COMP_BC) ){
-			DaoVmSpace_SaveByteCodes( self, ns );
+		DaoParser *parser = DaoVmSpace_AcquireParser( self );
+
+		if( self->options & DAO_OPTION_COMP_BC ){
+			parser->byteCoder = DaoVmSpace_AcquireByteCoder( self );
+			parser->byteBlock = DaoByteCoder_Init( parser->byteCoder );
 		}
+		parser->nameSpace = ns;
+		DString_Assign( parser->fileName, ns->name );
+		res = res && DaoParser_LexCode( parser, self->mainSource->chars, 1 );
+		res = res && DaoParser_ParseScript( parser );
+
+		if( res && (self->options & DAO_OPTION_COMP_BC) ){
+			DaoVmSpace_SaveByteCodes( self, parser->byteCoder, ns );
+			if( self->options & DAO_OPTION_LIST_BC ){
+				DaoByteCoder_Disassemble( parser->byteCoder );
+			}
+		}
+		if( parser->byteCoder ) DaoVmSpace_ReleaseByteCoder( self, parser->byteCoder );
+		DaoVmSpace_ReleaseParser( self, parser );
 	}
-	if( res && !(self->options & DAO_EXEC_ARCHIVE) ){
-		DString name = DString_WrapMBS( "main" );
-		int id = DaoNamespace_FindConst( ns, & name );
-		DaoValue *cst = DaoNamespace_GetConst( ns, id );
-		expMain = DaoVmSpace_FindExplicitMain( ns, argNames, argValues );
-		if( expMain ){
-			DaoVmSpace_ConvertArguments( self, expMain, argNames, argValues );
-		}else if( (cst && cst->type == DAO_ROUTINE) || argValues->size ){
-			DaoStream_WriteMBS( io, "ERROR: invalid command line arguments.\n" );
+	if( res && !(self->options & DAO_OPTION_ARCHIVE) ){
+		DString name = DString_WrapChars( "main" );
+		int error = 0;
+		expMain = DaoVmSpace_FindExplicitMain( ns, argNames, argValues, & error );
+		if( error ){
 			res = 0;
+			DaoVmSpace_PrintCode( self );
+			DaoStream_WriteChars( io, "ERROR: invalid command line arguments.\n" );
 		}
 	}
-	DArray_Delete( argNames );
+	DList_Delete( argNames );
 
 	if( res == 0 ){
-		DArray_Delete( argValues );
+		DList_Delete( argValues );
 		return 0;
 	}
 
-	if( self->options & DAO_EXEC_ARCHIVE ){
+	if( self->options & DAO_OPTION_ARCHIVE ){
 		DaoVmSpace_SaveArchive( self, argValues );
-		DArray_Delete( argValues );
+		DList_Delete( argValues );
 		return 1;
 	}
-	DArray_Delete( argValues );
-	if( self->options & DAO_EXEC_COMP_BC ) return 1;
+	DList_Delete( argValues );
+	if( self->options & DAO_OPTION_COMP_BC ) return 1;
 
 	mainRoutine = ns->mainRoutine;
 
 	DaoVmSpace_ExeCmdArgs( self );
-	/* always execute default ::main() routine first for initialization: */
+	/* always execute default __main__() routine first for initialization: */
 	if( mainRoutine ){
 		DaoProcess_PushRoutine( vmp, mainRoutine, NULL );
 		DaoProcess_Execute( vmp );
 	}
 	/* check and execute explicitly defined main() routine  */
-	ps = ns->argParams->items.items.pValue;
-	N = ns->argParams->items.size;
+	ps = ns->argParams->value->items.pValue;
+	N = ns->argParams->value->size;
 	if( expMain != NULL ){
-		if( DaoProcess_Call( vmp, expMain, NULL, ps, N ) ) return 0;
+		int ret = DaoProcess_Call( vmp, expMain, NULL, ps, N );
+		if( ret == DAO_ERROR_PARAM ){
+			DaoStream_WriteChars( io, "ERROR: invalid command line arguments.\n" );
+		}
+		if( ret ) return 0;
 	}
-	if( (self->options & DAO_EXEC_INTERUN) && self->userHandler == NULL )
+	if( (self->options & DAO_OPTION_INTERUN) && self->userHandler == NULL )
 		DaoVmSpace_Interun( self, NULL );
 
 	return 1;
 }
-int DaoVmSpace_CompleteModuleName( DaoVmSpace *self, DString *fname )
+int DaoVmSpace_CompleteModuleName( DaoVmSpace *self, DString *fname, int types )
 {
 	int i, modtype = DAO_MODULE_NONE;
 	daoint slen = strlen( DAO_DLL_SUFFIX );
 	daoint size;
-	DString_ToMBS( fname );
+
 	size = fname->size;
-	if( size >4 && DString_FindMBS( fname, ".dac", 0 ) == size-4 ){
+	if( (types & DAO_MODULE_DAC) && size >4 && DString_FindChars( fname, ".dac", 0 ) == size-4 ){
 		DaoVmSpace_SearchPath( self, fname, DAO_FILE_PATH, 1 );
 		if( TestFile( self, fname ) ) modtype = DAO_MODULE_DAC;
-	}else if( size >4 && ( DString_FindMBS( fname, ".dao", 0 ) == size-4
-				|| DString_FindMBS( fname, ".cgi", 0 ) == size-4 ) ){
+	}else if( (types & DAO_MODULE_DAO) && size >4 && DString_FindChars( fname, ".dao", 0 ) == size-4 ){
 		DaoVmSpace_SearchPath( self, fname, DAO_FILE_PATH, 1 );
 		if( TestFile( self, fname ) ) modtype = DAO_MODULE_DAO;
-	}else if( size > slen && DString_FindMBS( fname, DAO_DLL_SUFFIX, 0 ) == size - slen ){
+	}else if( types == DAO_MODULE_ANY && size >4 && DString_FindChars( fname, ".cgi", 0 ) == size-4 ){
+		DaoVmSpace_SearchPath( self, fname, DAO_FILE_PATH, 1 );
+		if( TestFile( self, fname ) ) modtype = DAO_MODULE_DAO;
+	}else if( (types & DAO_MODULE_DLL) && size > slen && DString_FindChars( fname, DAO_DLL_SUFFIX, 0 ) == size - slen ){
 		DaoVmSpace_SearchPath( self, fname, DAO_FILE_PATH, 1 );
 		if( TestFile( self, fname ) ) modtype = DAO_MODULE_DLL;
 	}else{
-		DString *fn = DString_New(1);
-		DString *path = DString_New(1);
-		DString *file = DString_New(1);
+		DString *fn = DString_New();
+		DString *path = DString_New();
+		DString *file = DString_New();
 		daoint pos = fname->size;
-		while( pos && (fname->mbs[pos-1] == '_' || isalnum( fname->mbs[pos-1] )) ) pos -= 1;
-		if( pos && (fname->mbs[pos-1] == '/' || fname->mbs[pos-1] == '\\') ){
+		while( pos && (fname->chars[pos-1] == '_' || isalnum( fname->chars[pos-1] )) ) pos -= 1;
+		if( pos && (fname->chars[pos-1] == '/' || fname->chars[pos-1] == '\\') ){
 			DString_SubString( fname, path, 0, pos );
 			DString_SubString( fname, file, pos, fname->size - pos );
 		}else{
 			DString_Assign( file, fname );
 		}
 		for(i=0; i<DAO_FILE_TYPE_NUM; i++){
-			if( i < DAO_MODULE_DLL ){
+			if( !(types & daoModuleTypes[i]) ) continue;
+			if( daoModuleTypes[i] < DAO_MODULE_DLL ){
 				DString_Assign( fn, fname );
 			}else{
-				if( strncmp( fname->mbs, "lib", 3 ) == 0 ) break;
+				if( strncmp( fname->chars, daoDllPrefix[i], 3 ) == 0 ) break;
 				DString_Assign( fn, path );
-				DString_AppendMBS( fn, daoDllPrefix[i] );
+				DString_AppendChars( fn, daoDllPrefix[i] );
 				DString_Append( fn, file );
 			}
-			DString_AppendMBS( fn, daoFileSuffix[i] );
+			DString_AppendChars( fn, daoFileSuffix[i] );
 			DaoVmSpace_SearchPath( self, fn, DAO_FILE_PATH, 1 );
 #if 0
-			printf( "%s %s\n", fn->mbs, self->nameLoading->items.pString[0]->mbs );
+			printf( "%i %s %s\n", i, fn->chars, self->nameLoading->items.pString[0]->chars );
 #endif
-			/* skip the current file: reason, example, in gsl_vector.dao:
-			   load gsl_vector require gsl_complex, gsl_block;
-			   which will allow searching for gsl_vector.so, gsl_vector.dylib or gsl_vector.dll. */
+			/*
+			// skip the current file, since one may create .dao file with the same name
+			// as a dll module to load that dll module in certain way, or do extra things.
+			*/
 			if( self->nameLoading->size && DString_EQ( fn, self->nameLoading->items.pString[0] ) ) continue;
 			if( TestFile( self, fn ) ){
-				modtype = i+1;
+				modtype = daoModuleTypes[i];
 				if( modtype > DAO_MODULE_DLL ) modtype = DAO_MODULE_DLL;
 				DString_Assign( fname, fn );
 				break;
@@ -1487,150 +1705,161 @@ int DaoVmSpace_CompleteModuleName( DaoVmSpace *self, DString *fname )
 static void DaoVmSpace_PopLoadingNamePath( DaoVmSpace *self, int path )
 {
 	DaoVmSpace_Lock( self );
-	if( path ) DArray_PopFront( self->pathLoading );
-	DArray_PopFront( self->nameLoading );
+	if( path ) DList_PopFront( self->pathLoading );
+	DList_PopFront( self->nameLoading );
 	DaoVmSpace_Unlock( self );
 }
-/* Loading module in Dao source file.
- * The first time the module is loaded:
- * (1) its implicit main (codes outside of any class and function) is executed;
- * (2) then, its explicit main that matches with "args" will be executed.
- * The next time the module is loaded:
- * (1) its implicit main is executed, IF run != 0; (mainly for IDE)
- * (2) its explicit main that matches with "args" will be executed. */
-DaoNamespace* DaoVmSpace_LoadDaoModuleExt( DaoVmSpace *self, DString *libpath, DArray *args, int run )
+/*
+// Loading module in Dao source file.
+// The first time the module is loaded:
+//   (1) its implicit main (codes outside of any class and function) is executed;
+//   (2) then, its explicit main that matches with "args" will be executed.
+// The next time the module is loaded:
+//   (1) its implicit main is executed, IF run != 0; (mainly for IDE)
+//   (2) its explicit main that matches with "args" will be executed.
+*/
+DaoNamespace* DaoVmSpace_LoadDaoModuleExt( DaoVmSpace *self, DString *libpath, DList *args, int run )
 {
 	DString *source = NULL;
-	DArray *argNames = NULL, *argValues = NULL;
+	DList *argNames = NULL, *argValues = NULL;
 	DaoNamespace *ns = NULL, *ns2 = NULL;
 	DaoRoutine *mainRoutine = NULL;
 	DaoParser *parser = NULL;
 	DaoProcess *process;
-	DString name;
-	DNode *node;
-	size_t tm = 0;
-	daoint i = DString_FindMBS( libpath, "/addpath.dao", 0 );
-	daoint j = DString_FindMBS( libpath, "/delpath.dao", 0 );
 	daoint nsCount = self->loadedModules->size;
-	int bl, m, poppath = 0;
-	int cfgpath = i != MAXSIZE && i == libpath->size - 12;
-	cfgpath = cfgpath || (j != MAXSIZE && j == libpath->size - 12);
-	/*  XXX if cfgpath == true, only parsing? */
+	int poppath = 0;
+	size_t tm = 0;
 
 	if( args ){
-		argNames = DArray_New(D_STRING);
-		argValues = DArray_New(D_STRING);
+		argNames = DList_New( DAO_DATA_STRING );
+		argValues = DList_New( DAO_DATA_STRING );
 	}
 
 	ns = ns2 = DaoVmSpace_FindNamespace( self, libpath );
 
-	tm = Dao_FileChangedTime( libpath->mbs );
-	/* printf( "time = %lli,  %s  %p\n", tm, libpath->mbs, node ); */
+	tm = Dao_FileChangedTime( libpath->chars );
+	/* printf( "time = %lli,  %s  %p\n", tm, libpath->chars, node ); */
 	if( ns && ns->time >= tm ){
 		if( args ) DaoVmSpace_ParseArguments( self, ns, NULL, args, argNames, argValues );
 		if( run ) goto ExecuteImplicitMain;
 		goto ExecuteExplicitMain;
 	}
 
-	source = DString_New(1);
+	source = DString_New();
 	if( ! DaoVmSpace_ReadSource( self, libpath, source ) ) goto LoadingFailed;
 
-	if( self->options & DAO_EXEC_ARCHIVE ){
-		DArray_Append( self->sourceArchive, libpath );
-		DArray_Append( self->sourceArchive, source );
+	if( sizeof(dao_integer) != 8 || sizeof(dao_float) != 8 ){
+		int daofile = DString_Match( libpath, "%w %. dao $", 0, 0 );
+		int daocmd = DString_Match( source, "^ #! [^%n]* dao %s* {{\n}}", 0, 0 );
+		if( daofile == 0 && daocmd == 0 ) goto LoadingFailed;
+	}
+
+	if( self->options & DAO_OPTION_ARCHIVE ){
+		DList_Append( self->sourceArchive, libpath );
+		DList_Append( self->sourceArchive, source );
 	}
 
 	/*
-	   printf("%p : loading %s\n", self, libpath->mbs );
+	   printf("%p : loading %s\n", self, libpath->chars );
 	 */
-	ns = DaoNamespace_New( self, libpath->mbs );
+	ns = DaoNamespace_New( self, libpath->chars );
 	ns->time = tm;
 	if( args ) DaoVmSpace_ParseArguments( self, ns, NULL, args, argNames, argValues );
 
 	DaoVmSpace_Lock( self );
-	DArray_PushFront( self->loadedModules, ns );
+	DList_PushFront( self->loadedModules, ns );
 	MAP_Insert( self->nsModules, libpath, ns );
-	DArray_PushFront( self->nameLoading, ns->name );
-	if( ns->path->size ) DArray_PushFront( self->pathLoading, ns->path );
+	DList_PushFront( self->nameLoading, ns->name );
+	if( ns->path->size ) DList_PushFront( self->pathLoading, ns->path );
 	DaoVmSpace_Unlock( self );
 	poppath = ns->path->size;
 
-	if( source->mbs[0] == DAO_BC_SIGNATURE[0] ){
-		DaoByteDecoder *decoder = DaoByteDecoder_New( self );
-		int bl = DaoByteDecoder_Decode( decoder, source, ns );
-		DaoByteDecoder_Delete( decoder );
+	if( source->chars[0] == DAO_BC_SIGNATURE[0] ){
+		DaoByteCoder *byteCoder = DaoVmSpace_AcquireByteCoder( self );
+		int bl = DaoByteCoder_Decode( byteCoder, source );
+		if( self->options & DAO_OPTION_LIST_BC ) DaoByteCoder_Disassemble( byteCoder );
+		bl = bl && DaoByteCoder_Build( byteCoder, ns );
+		DaoVmSpace_ReleaseByteCoder( self, byteCoder );
 		if( bl == 0 ) goto LoadingFailed;
 	}else{
 		parser = DaoVmSpace_AcquireParser( self );
 		parser->vmSpace = self;
 		parser->nameSpace = ns;
 		DString_Assign( parser->fileName, libpath );
-		if( ! DaoParser_LexCode( parser, DString_GetMBS( source ), 1 ) ) goto LoadingFailed;
+		if( ! DaoParser_LexCode( parser, DString_GetData( source ), 1 ) ) goto LoadingFailed;
+		if( self->options & DAO_OPTION_COMP_BC ){
+			parser->byteCoder = DaoVmSpace_AcquireByteCoder( self );
+			parser->byteBlock = DaoByteCoder_Init( parser->byteCoder );
+		}
 		if( ! DaoParser_ParseScript( parser ) ) goto LoadingFailed;
 		if( ns->mainRoutine == NULL ) goto LoadingFailed;
-		DString_SetMBS( ns->mainRoutine->routName, "::main" );
+		DString_SetChars( ns->mainRoutine->routName, "__main__" );
+		if( parser->byteCoder ){
+			DaoVmSpace_SaveByteCodes( self, parser->byteCoder, ns );
+			DaoVmSpace_ReleaseByteCoder( self, parser->byteCoder );
+		}
 		DaoVmSpace_ReleaseParser( self, parser );
 		parser = NULL;
-		if( self->options & DAO_EXEC_COMP_BC ) DaoVmSpace_SaveByteCodes( self, ns );
 	}
 
 ExecuteImplicitMain :
 	if( ns->mainRoutine->body->vmCodes->size > 1 ){
+		int status;
 		process = DaoVmSpace_AcquireProcess( self );
 		DaoVmSpace_Lock( self );
-		DArray_PushFront( self->nameLoading, ns->path );
-		DArray_PushFront( self->pathLoading, ns->path );
+		DList_PushFront( self->nameLoading, ns->path );
+		DList_PushFront( self->pathLoading, ns->path );
 		DaoVmSpace_Unlock( self );
 		DaoProcess_PushRoutine( process, ns->mainRoutine, NULL );
-		if( ! DaoProcess_Execute( process ) ){
-			DaoVmSpace_ReleaseProcess( self, process );
-			DaoVmSpace_Lock( self );
-			DArray_PopFront( self->nameLoading );
-			DArray_PopFront( self->pathLoading );
-			DaoVmSpace_Unlock( self );
-			goto LoadingFailed;
-		}
+		DaoProcess_Execute( process );
+		status = process->status;
 		DaoVmSpace_ReleaseProcess( self, process );
 		DaoVmSpace_Lock( self );
-		DArray_PopFront( self->nameLoading );
-		DArray_PopFront( self->pathLoading );
+		DList_PopFront( self->nameLoading );
+		DList_PopFront( self->pathLoading );
 		DaoVmSpace_Unlock( self );
+		if( status == DAO_PROCESS_ABORTED ) goto LoadingFailed;
 	}
 
 ExecuteExplicitMain :
 
+	/* check and execute explicitly defined main() routine  */
 	if( args ){
-		mainRoutine = DaoVmSpace_FindExplicitMain( ns, argNames, argValues );
-		if( mainRoutine ) DaoVmSpace_ConvertArguments( self, mainRoutine, argNames, argValues );
+		int error = 0;
+		mainRoutine = DaoVmSpace_FindExplicitMain( ns, argNames, argValues, & error );
+		if( error ) goto InvalidArgument;
 	}
 	if( mainRoutine != NULL ){
-		int ret, N = ns->argParams->items.size;
-		DaoValue **ps = ns->argParams->items.items.pValue;
+		int ret, N = ns->argParams->value->size;
+		DaoValue **ps = ns->argParams->value->items.pValue;
 		process = DaoVmSpace_AcquireProcess( self );
 		ret = DaoProcess_Call( process, mainRoutine, NULL, ps, N );
 		DaoVmSpace_ReleaseProcess( self, process );
+		if( ret == DAO_ERROR_PARAM ) goto InvalidArgument;
 		if( ret ) goto LoadingFailed;
 	}
 	DaoVmSpace_PopLoadingNamePath( self, poppath );
 	if( self->loadedModules->size > (nsCount+1) ){
 		DaoVmSpace_Lock( self );
-		DArray_Erase( self->loadedModules, 0, self->loadedModules->size - (nsCount+1) );
+		DList_Erase( self->loadedModules, 0, self->loadedModules->size - (nsCount+1) );
 		DaoVmSpace_Unlock( self );
 	}
 	if( source ) DString_Delete( source );
-	if( argNames ) DArray_Delete( argNames );
-	if( argValues ) DArray_Delete( argValues );
+	if( argNames ) DList_Delete( argNames );
+	if( argValues ) DList_Delete( argValues );
 	return ns;
+InvalidArgument:
+	DaoStream_WriteChars( self->errorStream, "ERROR: invalid arguments for the explicit main().\n" );
 LoadingFailed :
 	DaoVmSpace_PopLoadingNamePath( self, poppath );
 	if( self->loadedModules->size > nsCount ){
 		DaoVmSpace_Lock( self );
-		DArray_Erase( self->loadedModules, 0, self->loadedModules->size - nsCount );
+		DList_Erase( self->loadedModules, 0, self->loadedModules->size - nsCount );
 		DaoVmSpace_Unlock( self );
 	}
 	if( source ) DString_Delete( source );
-	if( argNames ) DArray_Delete( argNames );
-	if( argValues ) DArray_Delete( argValues );
+	if( argNames ) DList_Delete( argNames );
+	if( argValues ) DList_Delete( argValues );
 	if( parser ) DaoVmSpace_ReleaseParser( self, parser );
 	return 0;
 }
@@ -1649,95 +1878,91 @@ static DaoNamespace* DaoVmSpace_LoadDllModule( DaoVmSpace *self, DString *libpat
 	daoint nsCount = self->loadedModules->size;
 	daoint i, retc;
 
-	if( self->options & DAO_EXEC_SAFE ){
-		DaoStream_WriteMBS( self->errorStream,
-				"ERROR: not permitted to open shared library in safe running mode.\n" );
-		return NULL;
-	}
 	ns = DaoVmSpace_FindNamespace( self, libpath );
 	if( ns ) return ns;
 
 	if( (node = MAP_Find( self->vmodules, libpath ) ) ){
 		funpter = (DaoModuleOnLoad) node->value.pVoid;
-		ns = DaoNamespace_New( self, libpath->mbs );
+		ns = DaoNamespace_New( self, libpath->chars );
 	}else{
-		handle = Dao_OpenDLL( libpath->mbs );
+		handle = Dao_OpenDLL( libpath->chars );
 		if( ! handle ){
-			DaoStream_WriteMBS( self->errorStream, "ERROR: unable to open the library file \"" );
-			DaoStream_WriteMBS( self->errorStream, libpath->mbs );
-			DaoStream_WriteMBS( self->errorStream, "\".\n");
+			DaoStream_WriteChars( self->errorStream, "ERROR: unable to open the library file \"" );
+			DaoStream_WriteChars( self->errorStream, libpath->chars );
+			DaoStream_WriteChars( self->errorStream, "\".\n");
 			return 0;
 		}
-		name = DString_New(1);
-		DString_SetMBS( name, "DaoOnLoad" );
-		ns = DaoNamespace_New( self, libpath->mbs );
+		name = DString_New();
+		DString_SetChars( name, "DaoOnLoad" );
+		ns = DaoNamespace_New( self, libpath->chars );
 		ns->libHandle = handle;
 		funpter = (DaoModuleOnLoad) Dao_GetSymbolAddress( handle, "DaoOnLoad" );
 		if( funpter == NULL ){
-			const char *prefixes[4] = { "dao_", "dao", "libdao_", "libdao" };
 			int size = strlen( DAO_DLL_SUFFIX );
-			DString_SetDataMBS( name, ns->file->mbs, ns->file->size - size );
-			for(i=0; i<4; i++){
-				if( DString_FindMBS( name, prefixes[i], 0 ) != 0 ) continue;
-				DString_Erase( name, 0, strlen( prefixes[i] ) );
+			DString_SetBytes( name, ns->file->chars, ns->file->size - size );
+			for(i=0; i<DAO_FILE_TYPE_NUM; i++){
+				if( daoModuleTypes[i] < DAO_MODULE_DLL ) continue;
+				if( DString_FindChars( name, daoDllPrefix[i], 0 ) != 0 ) continue;
+				DString_Erase( name, 0, strlen( daoDllPrefix[i] ) );
 			}
-			DString_InsertMBS( name, "Dao", 0, 0, 3 );
-			DString_AppendMBS( name, "_OnLoad" );
-			funpter = (DaoModuleOnLoad) Dao_GetSymbolAddress( handle, name->mbs );
+			DString_InsertChars( name, "Dao", 0, 0, 3 );
+			DString_AppendChars( name, "_OnLoad" );
+			funpter = (DaoModuleOnLoad) Dao_GetSymbolAddress( handle, name->chars );
 			if( funpter == NULL ){
-				for(i=3; i<name->size-7; i++) name->mbs[i] = tolower( name->mbs[i] );
-				funpter = (DaoModuleOnLoad) Dao_GetSymbolAddress( handle, name->mbs );
-			}
-			if( funpter == NULL ){
-				name->mbs[3] = toupper( name->mbs[3] );
-				funpter = (DaoModuleOnLoad) Dao_GetSymbolAddress( handle, name->mbs );
+				for(i=3; i<name->size-7; i++) name->chars[i] = tolower( name->chars[i] );
+				funpter = (DaoModuleOnLoad) Dao_GetSymbolAddress( handle, name->chars );
 			}
 			if( funpter == NULL ){
-				for(i=3; i<name->size-7; i++) name->mbs[i] = toupper( name->mbs[i] );
-				funpter = (DaoModuleOnLoad) Dao_GetSymbolAddress( handle, name->mbs );
+				name->chars[3] = toupper( name->chars[3] );
+				funpter = (DaoModuleOnLoad) Dao_GetSymbolAddress( handle, name->chars );
+			}
+			if( funpter == NULL ){
+				for(i=3; i<name->size-7; i++) name->chars[i] = toupper( name->chars[i] );
+				funpter = (DaoModuleOnLoad) Dao_GetSymbolAddress( handle, name->chars );
 			}
 		}
 	}
-	if( self->options & DAO_EXEC_ARCHIVE ){
-		if( name == NULL ) name = DString_New(1);
+	if( self->options & DAO_OPTION_ARCHIVE ){
+		if( name == NULL ) name = DString_New();
 		if( funpter == NULL ) DString_Clear( name );
-		DArray_Append( self->sourceArchive, libpath );
-		DArray_Append( self->sourceArchive, name );
+		DList_Append( self->sourceArchive, libpath );
+		DList_Append( self->sourceArchive, name );
 	}
 	if( name ) DString_Delete( name );
 
 	DaoVmSpace_Lock( self );
-	DArray_PushFront( self->loadedModules, ns );
+	DList_PushFront( self->loadedModules, ns );
 	MAP_Insert( self->nsModules, libpath, ns );
 	DaoVmSpace_Unlock( self );
 
-
-	/* no warning or error for loading a C/C++ dynamic linking library
-	   for solving symbols in Dao modules. */
+	/*
+	// no warning or error for loading a C/C++ dynamic linking library
+	// for solving symbols in Dao modules.
+	*/
 	if( funpter == NULL ) return ns;
 
 	DaoVmSpace_Lock( self );
-	DArray_PushFront( self->nameLoading, ns->name );
-	if( ns->path->size ) DArray_PushFront( self->pathLoading, ns->path );
+	DList_PushFront( self->nameLoading, ns->name );
+	if( ns->path->size ) DList_PushFront( self->pathLoading, ns->path );
 	DaoVmSpace_Unlock( self );
 
 	retc = (*funpter)( self, ns );
 
 	DaoVmSpace_Lock( self );
-	if( ns->path->size ) DArray_PopFront( self->pathLoading );
-	DArray_PopFront( self->nameLoading );
+	if( ns->path->size ) DList_PopFront( self->pathLoading );
+	DList_PopFront( self->nameLoading );
 	DaoVmSpace_Unlock( self );
 	if( retc ){
 		DaoVmSpace_Lock( self );
 		MAP_Erase( self->nsModules, ns->name );
-		DArray_Erase( self->loadedModules, 0, self->loadedModules->size - nsCount );
+		DList_Erase( self->loadedModules, 0, self->loadedModules->size - nsCount );
 		DaoVmSpace_Unlock( self );
 		return NULL;
 	}
 	DaoNamespace_UpdateLookupTable( ns );
 	if( self->loadedModules->size > (nsCount+1) ){
 		DaoVmSpace_Lock( self );
-		DArray_Erase( self->loadedModules, 0, self->loadedModules->size - (nsCount+1) );
+		DList_Erase( self->loadedModules, 0, self->loadedModules->size - (nsCount+1) );
 		DaoVmSpace_Unlock( self );
 	}
 	return ns;
@@ -1745,29 +1970,28 @@ static DaoNamespace* DaoVmSpace_LoadDllModule( DaoVmSpace *self, DString *libpat
 void DaoVmSpace_AddVirtualModule( DaoVmSpace *self, DaoVModule *module )
 {
 	DNode *node;
-	DString *fname = DString_New(1);
-	DString *source = DString_New(1);
+	DString *fname = DString_New();
+	DString *source = DString_New();
 	char *data = (char*) module->data;
 	daoint pos, n = module->length;
 
-	DString_SetMBS( fname, "/@/" );
-	DString_AppendMBS( fname, module->name );
+	DString_SetChars( fname, "/@/" );
+	DString_AppendChars( fname, module->name );
 	if( module->onload ){
 		MAP_Insert( self->vmodules, fname, module->onload );
 	}else{
 		if( n < 0 ) n = strlen( data );
 		node = DMap_Find( self->vfiles, fname );
 		if( node ){
-			DString_AppendDataMBS( node->value.pString, data, n );
+			DString_AppendBytes( node->value.pString, data, n );
 		}else{
-			DString_ToMBS( source );
-			DString_SetDataMBS( source, data, n );
+			DString_SetBytes( source, data, n );
 			MAP_Insert( self->vfiles, fname, source );
 		}
 	}
 	pos = DString_RFindChar( fname, '/', -1 );
 	DString_Erase( fname, pos, -1 );
-	DArray_PushFront( self->virtualPaths, fname );
+	DList_PushFront( self->virtualPaths, fname );
 	DString_Delete( fname );
 	DString_Delete( source );
 }
@@ -1778,40 +2002,40 @@ void Dao_MakePath( DString *base, DString *path )
 	base = DString_Copy( base );
 	Dao_NormalizePathSep( base );
 	Dao_NormalizePathSep( path );
-	while( DString_MatchMBS( path, " ^ %.%. / ", NULL, NULL ) ){
-		if( DString_MatchMBS( base, " [^/] + ( / | ) $ ", NULL, NULL ) ){
-			DString_ChangeMBS( path, " ^ %.%. / ", "", 1 );
-			DString_ChangeMBS( base, " [^/] + ( / |) $ ", "", 0 );
+	while( DString_Match( path, " ^ %.%. / ", NULL, NULL ) ){
+		if( DString_Match( base, " [^/] + ( / | ) $ ", NULL, NULL ) ){
+			DString_Change( path, " ^ %.%. / ", "", 1 );
+			DString_Change( base, " [^/] + ( / |) $ ", "", 0 );
 		}else{
 			DString_Delete( base );
 			return;
 		}
 	}
-	if( DString_MatchMBS( path, " ^ %.%. $ ", NULL, NULL ) ){
-		if( DString_MatchMBS( base, " [^/] + ( / | ) $ ", NULL, NULL ) ){
+	if( DString_Match( path, " ^ %.%. $ ", NULL, NULL ) ){
+		if( DString_Match( base, " [^/] + ( / | ) $ ", NULL, NULL ) ){
 			DString_Clear( path );
-			DString_ChangeMBS( base, " [^/] + ( / |) $ ", "", 0 );
+			DString_Change( base, " [^/] + ( / |) $ ", "", 0 );
 		}
 	}
 	if( base->size && path->size ){
-		if( base->mbs[ base->size-1 ] != '/' && path->mbs[0] != '/' )
+		if( base->chars[ base->size-1 ] != '/' && path->chars[0] != '/' )
 			DString_InsertChar( path, '/', 0 );
 		DString_Insert( path, base, 0, 0, 0 );
 	}else if( base->size && path->size == 0 ){
 		DString_Assign( path, base );
 	}
-	DString_ChangeMBS( path, "/ %. (/|$)", "/", 0 );
+	DString_Change( path, "/ %. (/|$)", "/", 0 );
 	DString_Delete( base );
 }
 int DaoVmSpace_SearchResource( DaoVmSpace *self, DString *fname )
 {
 	DString *path;
-	if( fname->size == 0 || fname->mbs[0] != '@' ) return 0;
-	path = DString_New(1);
-	DString_AppendMBS( path, "/@/" );
-	DString_AppendMBS( path, fname->mbs + 1 );
+	if( fname->size == 0 || fname->chars[0] != '@' ) return 0;
+	path = DString_New();
+	DString_AppendChars( path, "/@/" );
+	DString_AppendChars( path, fname->chars + 1 );
 	if( TestPath( self, path, DAO_FILE_PATH ) == 0 ){
-		DString_SetMBS( path, fname->mbs + 1 );
+		DString_SetChars( path, fname->chars + 1 );
 		Dao_MakePath( self->pathWorking, path );
 	}
 	if( TestPath( self, path, DAO_FILE_PATH ) ){
@@ -1822,16 +2046,16 @@ int DaoVmSpace_SearchResource( DaoVmSpace *self, DString *fname )
 	DString_Delete( path );
 	return 0;
 }
-int DaoVmSpace_SearchPath2( DaoVmSpace *self, DArray *paths, DString *fname, int type )
+int DaoVmSpace_SearchPath2( DaoVmSpace *self, DList *paths, DString *fname, int type )
 {
-	DString *path = DString_New(1);
+	DString *path = DString_New();
 	daoint i;
 	for(i=0; i<paths->size; ++i){
 		DString_Assign( path, paths->items.pString[i] );
-		if( path->size && path->mbs[ path->size-1 ] != '/' ) DString_AppendMBS( path, "/" );
+		if( path->size && path->chars[ path->size-1 ] != '/' ) DString_AppendChars( path, "/" );
 		DString_Append( path, fname );
 		/*
-		   printf( "%s %s\n", paths->items.pString[i]->mbs, path->mbs );
+		   printf( "%s %s\n", paths->items.pString[i]->chars, path->chars );
 		 */
 		if( TestPath( self, path, type ) ){
 			DString_Assign( fname, path );
@@ -1844,25 +2068,23 @@ int DaoVmSpace_SearchPath2( DaoVmSpace *self, DArray *paths, DString *fname, int
 }
 void DaoVmSpace_SearchPath( DaoVmSpace *self, DString *fname, int type, int check )
 {
-	daoint i;
 	char *p;
 	DString *path;
 
-	DString_ToMBS( fname );
 	if( DaoVmSpace_SearchResource( self, fname ) ) return;
 
-	DString_ChangeMBS( fname, "/ %s* %. %s* /", "/", 0 );
-	DString_ChangeMBS( fname, "[^%./] + / %. %. /", "", 0 );
+	DString_Change( fname, "/ %s* %. %s* /", "/", 0 );
+	DString_Change( fname, "[^%./] + / %. %. /", "", 0 );
 	/* erase the last '/' */
-	if( fname->size && fname->mbs[ fname->size-1 ] =='/' ){
+	if( fname->size && fname->chars[ fname->size-1 ] =='/' ){
 		fname->size --;
-		fname->mbs[ fname->size ] = 0;
+		fname->chars[ fname->size ] = 0;
 	}
 
 	/* C:\dir\source.dao; /home/...  */
-	if( fname->size >1 && ( fname->mbs[0]=='/' || fname->mbs[1]==':' ) ) return;
+	if( fname->size >1 && ( fname->chars[0]=='/' || fname->chars[1]==':' ) ) return;
 
-	while( ( p = strchr( fname->mbs, '\\') ) !=NULL ) *p = '/';
+	while( ( p = strchr( fname->chars, '\\') ) !=NULL ) *p = '/';
 
 	path = DString_Copy( self->pathWorking );
 
@@ -1870,7 +2092,7 @@ void DaoVmSpace_SearchPath( DaoVmSpace *self, DString *fname, int type, int chec
 	if( DaoVmSpace_SearchPath2( self, self->virtualPaths, fname, type ) ) goto FreeString;
 
 	/* ./source.dao; ../../source.dao */
-	if( strstr( fname->mbs, "./" ) !=NULL || strstr( fname->mbs, "../" ) !=NULL ){
+	if( strstr( fname->chars, "./" ) !=NULL || strstr( fname->chars, "../" ) !=NULL ){
 
 		if( self->pathLoading->size ){
 			DString_Assign( path, self->pathLoading->items.pString[0] );
@@ -1883,9 +2105,9 @@ void DaoVmSpace_SearchPath( DaoVmSpace *self, DString *fname, int type, int chec
 
 	if( DaoVmSpace_SearchPath2( self, self->pathLoading, fname, type ) ) goto FreeString;
 
-	if( path->size > 0 && path->mbs[ path->size -1 ] != '/' ) DString_AppendMBS( path, "/" );
+	if( path->size > 0 && path->chars[ path->size -1 ] != '/' ) DString_AppendChars( path, "/" );
 	DString_Append( path, fname );
-	/* printf( "%s %s\n", path->mbs, path->mbs ); */
+	/* printf( "%s %s\n", path->chars, path->chars ); */
 	if( ! check || TestPath( self, path, type ) ){
 		DString_Assign( fname, path );
 		goto FreeString;
@@ -1898,8 +2120,8 @@ FreeString:
 void DaoVmSpace_SetPath( DaoVmSpace *self, const char *path )
 {
 	char *p;
-	DString_SetMBS( self->pathWorking, path );
-	while( ( p = strchr( self->pathWorking->mbs, '\\') ) !=NULL ) *p = '/';
+	DString_SetChars( self->pathWorking, path );
+	while( ( p = strchr( self->pathWorking->chars, '\\') ) !=NULL ) *p = '/';
 }
 /* Make path only relative to the current loading path or working path: */
 void DaoVmSpace_MakePath( DaoVmSpace *self, DString *path )
@@ -1908,14 +2130,14 @@ void DaoVmSpace_MakePath( DaoVmSpace *self, DString *path )
 
 	if( path->size == 0 ) return;
 	/* C:\dir\source.dao; /home/...  */
-	if( path->size > 1 && (path->mbs[0] == '/' || path->mbs[1] == ':') ) return;
+	if( path->size > 1 && (path->chars[0] == '/' || path->chars[1] == ':') ) return;
 
 	if( self->pathLoading->size ) wpath = self->pathLoading->items.pString[0];
-	if( path->mbs[0] == '.' ){
+	if( path->chars[0] == '.' ){
 		Dao_MakePath( wpath, path );
 	}else{
 		DString *tmp = DString_Copy( wpath );
-		if( tmp->size > 0 && tmp->mbs[ tmp->size-1 ] != '/' ) DString_AppendMBS( tmp, "/" );
+		if( tmp->size > 0 && tmp->chars[ tmp->size-1 ] != '/' ) DString_AppendChars( tmp, "/" );
 		DString_Append( tmp, path );
 		DString_Assign( path, tmp );
 		DString_Delete( tmp );
@@ -1923,27 +2145,27 @@ void DaoVmSpace_MakePath( DaoVmSpace *self, DString *path )
 }
 void DaoVmSpace_AddPath( DaoVmSpace *self, const char *path )
 {
-	DString *tmp, *pstr;
+	DString *pstr;
 	char *p;
 
 	if( path == NULL || path[0] == '\0' ) return;
 
-	pstr = DString_New(1);
-	DString_SetMBS( pstr, path );
-	while( ( p = strchr( pstr->mbs, '\\') ) !=NULL ) *p = '/';
+	pstr = DString_New();
+	DString_SetChars( pstr, path );
+	while( ( p = strchr( pstr->chars, '\\') ) !=NULL ) *p = '/';
 
 	DaoVmSpace_MakePath( self, pstr );
 
-	if( pstr->mbs[pstr->size-1] == '/' ) DString_Erase( pstr, pstr->size-1, 1 );
+	if( pstr->chars[pstr->size-1] == '/' ) DString_Erase( pstr, pstr->size-1, 1 );
 
-	if( Dao_IsDir( pstr->mbs ) ){
+	if( Dao_IsDir( pstr->chars ) ){
 		int len = pstr->size - strlen( "modules/auxlib" );
 		if( len >= 0 ){
-			if( DString_FindMBS( pstr, "modules/auxlib", 0 ) == len ) self->hasAuxlibPath = 1;
-			if( DString_FindMBS( pstr, "modules/syslib", 0 ) == len ) self->hasSyslibPath = 1;
+			if( DString_FindChars( pstr, "modules/auxlib", 0 ) == len ) self->hasAuxlibPath = 1;
+			if( DString_FindChars( pstr, "modules/syslib", 0 ) == len ) self->hasSyslibPath = 1;
 		}
-		DArray_PushFront( self->pathSearching, pstr );
-		DString_AppendMBS( pstr, "/addpath.dao" );
+		DList_PushFront( self->pathSearching, pstr );
+		DString_AppendChars( pstr, "/addpath.dao" );
 		if( TestFile( self, pstr ) ){
 			/* the namespace may have got no chance to reduce its reference count: */
 			DaoNamespace *ns = DaoVmSpace_LoadDaoModuleExt( self, pstr, NULL, 0 );
@@ -1954,7 +2176,7 @@ void DaoVmSpace_AddPath( DaoVmSpace *self, const char *path )
 	DString_Delete( pstr );
 	/*
 	   for(i=0; i<self->pathSearching->size; i++ )
-	   printf( "%s\n", self->pathSearching->items.pString[i]->mbs );
+	   printf( "%s\n", self->pathSearching->items.pString[i]->chars );
 	 */
 }
 void DaoVmSpace_DelPath( DaoVmSpace *self, const char *path )
@@ -1963,13 +2185,13 @@ void DaoVmSpace_DelPath( DaoVmSpace *self, const char *path )
 	char *p;
 	int i, id = -1;
 
-	pstr = DString_New(1);
-	DString_SetMBS( pstr, path );
-	while( ( p = strchr( pstr->mbs, '\\') ) !=NULL ) *p = '/';
+	pstr = DString_New();
+	DString_SetChars( pstr, path );
+	while( ( p = strchr( pstr->chars, '\\') ) !=NULL ) *p = '/';
 
 	DaoVmSpace_MakePath( self, pstr );
 
-	if( pstr->mbs[pstr->size-1] == '/' ) DString_Erase( pstr, pstr->size-1, 1 );
+	if( pstr->chars[pstr->size-1] == '/' ) DString_Erase( pstr, pstr->size-1, 1 );
 
 	for(i=0; i<self->pathSearching->size; i++ ){
 		if( DString_Compare( pstr, self->pathSearching->items.pString[i] ) == 0 ){
@@ -1979,7 +2201,7 @@ void DaoVmSpace_DelPath( DaoVmSpace *self, const char *path )
 	}
 	if( id >= 0 ){
 		DString *pathDao = DString_Copy( pstr );
-		DString_AppendMBS( pathDao, "/delpath.dao" );
+		DString_AppendChars( pathDao, "/delpath.dao" );
 		if( TestFile( self, pathDao ) ){
 			DaoNamespace *ns = DaoVmSpace_LoadDaoModuleExt( self, pathDao, NULL, 0 );
 			GC_IncRC( ns );
@@ -1993,19 +2215,19 @@ void DaoVmSpace_DelPath( DaoVmSpace *self, const char *path )
 				}
 			}
 		}
-		DArray_Erase( self->pathSearching, id, 1 );
+		DList_Erase( self->pathSearching, id, 1 );
 		DString_Delete( pathDao );
 	}
 	DString_Delete( pstr );
 }
 const char* DaoVmSpace_CurrentWorkingPath( DaoVmSpace *self )
 {
-	return self->pathWorking->mbs;
+	return self->pathWorking->chars;
 }
 const char* DaoVmSpace_CurrentLoadingPath( DaoVmSpace *self )
 {
 	if( self->pathLoading->size ==0 ) return NULL;
-	return self->pathLoading->items.pString[0]->mbs;
+	return self->pathLoading->items.pString[0]->chars;
 }
 
 extern DaoTypeBase vmpTyper;
@@ -2018,63 +2240,48 @@ static void DaoConfigure_FromFile( const char *name )
 {
 	double number;
 	int i, ch, isnum, isint, integer=0, yes;
-	FILE *fin = fopen( name, "r" );
+	FILE *fin = Dao_OpenFile( name, "r" );
 	DaoToken *tk1, *tk2;
 	DaoLexer *lexer;
-	DArray *tokens;
+	DList *tokens;
 	DString *mbs;
 	if( fin == NULL ) return;
-	mbs = DString_New(1);
+	mbs = DString_New();
 	lexer = DaoLexer_New();
 	tokens = lexer->tokens;
 	while( ( ch=getc(fin) ) != EOF ) DString_AppendChar( mbs, ch );
 	fclose( fin );
 	DString_ToLower( mbs );
-	DaoLexer_Tokenize( lexer, mbs->mbs, DAO_LEX_ESCAPE );
+	DaoLexer_Tokenize( lexer, mbs->chars, DAO_LEX_ESCAPE );
 	i = 0;
 	while( i < tokens->size ){
 		tk1 = tokens->items.pToken[i];
-		/* printf( "%s\n", tk1->string->mbs ); */
+		/* printf( "%s\n", tk1->string.chars ); */
 		if( tk1->type == DTOK_IDENTIFIER ){
 			if( i+2 >= tokens->size ) goto InvalidConfig;
 			if( tokens->items.pToken[i+1]->type != DTOK_ASSN ) goto InvalidConfig;
 			tk2 = tokens->items.pToken[i+2];
 			isnum = isint = 0;
 			yes = -1;
-			if( tk2->type >= DTOK_DIGITS_HEX && tk2->type <= DTOK_NUMBER_SCI ){
+			if( tk2->type >= DTOK_DIGITS_DEC && tk2->type <= DTOK_NUMBER_SCI ){
 				isnum = 1;
-				if( tk2->type <= DTOK_NUMBER_HEX ){
-					isint = 1;
-					number = integer = strtol( tk2->string.mbs, NULL, 0 );
-				}else{
-					number = strtod( tk2->string.mbs, NULL );
-				}
+				isint = tk2->type <= DTOK_NUMBER_HEX;
+				number = DaoToken_ToFloat( tk2 );
+				integer = number;
 			}else if( tk2->type == DTOK_IDENTIFIER ){
-				if( TOKCMP( tk2, "yes" )==0 )  yes = 1;
-				if( TOKCMP( tk2, "no" )==0 ) yes = 0;
+				if( strcmp( tk2->string.chars, "yes" )==0 ) yes = 1;
+				if( strcmp( tk2->string.chars, "no" )==0 ) yes = 0;
 			}
-			if( TOKCMP( tk1, "cpu" )==0 ){
-				/* printf( "%s  %i\n", tk2->string->mbs, tk2->type ); */
+			if( strcmp( tk1->string.chars, "cpu" )==0 ){
+				/* printf( "%s  %i\n", tk2->string->chars, tk2->type ); */
 				if( isint == 0 ) goto InvalidConfigValue;
 				daoConfig.cpu = integer;
-			}else if( TOKCMP( tk1, "jit" )==0 ){
+			}else if( strcmp( tk1->string.chars, "jit" )==0 ){
 				if( yes <0 ) goto InvalidConfigValue;
 				daoConfig.jit = yes;
-			}else if( TOKCMP( tk1, "safe" )==0 ){
-				if( yes <0 ) goto InvalidConfigValue;
-				daoConfig.safe = yes;
-			}else if( TOKCMP( tk1, "typedcode" )==0 ){
-				if( yes <0 ) goto InvalidConfigValue;
-				daoConfig.typedcode = yes;
-			}else if( TOKCMP( tk1, "optimize" )==0 ){
+			}else if( strcmp( tk1->string.chars, "optimize" )==0 ){
 				if( yes <0 ) goto InvalidConfigValue;
 				daoConfig.optimize = yes;
-			}else if( TOKCMP( tk1, "mbs" )==0 ){
-				if( yes <0 ) goto InvalidConfigValue;
-				daoConfig.mbs = yes;
-			}else if( TOKCMP( tk1, "wcs" )==0 ){
-				if( yes <0 ) goto InvalidConfigValue;
-				daoConfig.wcs = yes;
 			}else{
 				goto InvalidConfigName;
 			}
@@ -2085,13 +2292,13 @@ static void DaoConfigure_FromFile( const char *name )
 			continue;
 		}
 InvalidConfig :
-		printf( "error: invalid configuration file format at line: %i!\n", tk1->line );
+		printf( "ERROR: invalid configuration file format at line: %i!\n", tk1->line );
 		break;
 InvalidConfigName :
-		printf( "error: invalid configuration option name: %s!\n", tk1->string.mbs );
+		printf( "ERROR: invalid configuration option name: %s!\n", tk1->string.chars );
 		break;
 InvalidConfigValue :
-		printf( "error: invalid configuration option value: %s!\n", tk2->string.mbs );
+		printf( "ERROR: invalid configuration option value: %s!\n", tk2->string.chars );
 		break;
 	}
 	DaoLexer_Delete( lexer );
@@ -2100,189 +2307,35 @@ InvalidConfigValue :
 static void DaoConfigure()
 {
 	char *daodir = getenv( "DAO_DIR" );
-	DString *mbs = DString_New(1);
+	DString *mbs = DString_New();
 
 	DaoInitLexTable();
 	daoConfig.iscgi = getenv( "GATEWAY_INTERFACE" ) ? 1 : 0;
 
-	DString_SetMBS( mbs, DAO_DIR );
-	DString_AppendMBS( mbs, "/dao.conf" );
-	DaoConfigure_FromFile( mbs->mbs );
+	DString_SetChars( mbs, DAO_DIR );
+	DString_AppendChars( mbs, "/dao.conf" );
+	DaoConfigure_FromFile( mbs->chars );
 	if( daodir ){
-		DString_SetMBS( mbs, daodir );
+		DString_SetChars( mbs, daodir );
 		if( daodir[ mbs->size-1 ] == '/' ){
-			DString_AppendMBS( mbs, "dao.conf" );
+			DString_AppendChars( mbs, "dao.conf" );
 		}else{
-			DString_AppendMBS( mbs, "/dao.conf" );
+			DString_AppendChars( mbs, "/dao.conf" );
 		}
-		DaoConfigure_FromFile( mbs->mbs );
+		DaoConfigure_FromFile( mbs->chars );
 	}
 	DaoConfigure_FromFile( "./dao.conf" );
 	DString_Delete( mbs );
-#ifdef DAO_MBSTRING_ONLY
-	daoConfig.mbs = 1;
-	daoConfig.wcs = 0;
-#endif
 }
-
-
-
-#ifdef DEBUG
-static void dao_FakeList_FakeList( DaoProcess *_proc, DaoValue *_p[], int _n );
-static void dao_FakeList_Size( DaoProcess *_proc, DaoValue *_p[], int _n );
-static void dao_FakeList_GetItem( DaoProcess *_proc, DaoValue *_p[], int _n );
-static void dao_FakeList_SetItem( DaoProcess *_proc, DaoValue *_p[], int _n );
-
-#define FakeListName "FakeList<@T<short|int|float>=int,@S=int>"
-
-static DaoFuncItem dao_FakeList_Meths[] =
-{
-	/* the names of allocators must be identical to the typer name: */
-	{ dao_FakeList_FakeList, FakeListName "( size=0 )" },
-	{ dao_FakeList_Size, "size( self :FakeList )=>int" },
-	{ dao_FakeList_GetItem, "[]( self :FakeList<@T<short|int|float>>, index :int )=>int" },
-	{ dao_FakeList_SetItem, "[]=( self :FakeList<@T<short|int|float>>, value :int, index :int )=>int" },
-	{ NULL, NULL }
-};
-static void Dao_FakeList_Delete( void *self ){}
-static DaoTypeBase FakeList_Typer =
-{ FakeListName, NULL, NULL, dao_FakeList_Meths, {0}, {0}, Dao_FakeList_Delete, NULL };
-DaoTypeBase *dao_FakeList_Typer = & FakeList_Typer;
-
-static void dao_FakeList_FakeList( DaoProcess *_proc, DaoValue *_p[], int _n )
-{
-  int size = _p[0]->xInteger.value;
-  DaoType *retype = DaoProcess_GetReturnType( _proc );
-  DaoCdata *cdata = DaoCdata_New( FakeList_Typer.core->kernel->abtype, (void*)(daoint)size );
-  printf( "retype = %s\n", retype->name->mbs );
-  GC_ShiftRC( retype, cdata->ctype );
-  cdata->ctype = retype;
-  DaoProcess_PutValue( _proc, (DaoValue*)cdata );
-}
-static void dao_FakeList_Size( DaoProcess *_proc, DaoValue *_p[], int _n )
-{
-  daoint size = (daoint) DaoCdata_GetData( & _p[0]->xCdata );
-  DaoProcess_PutInteger( _proc, size );
-}
-static void dao_FakeList_GetItem( DaoProcess *_proc, DaoValue *_p[], int _n )
-{
-  DaoProcess_PutInteger( _proc, 123 );
-}
-static void dao_FakeList_SetItem( DaoProcess *_proc, DaoValue *_p[], int _n )
-{
-}
-#endif
-
-
-
-static void DaoBuiltIn_Warn( DaoProcess *proc, DaoValue *p[], int n )
-{
-	DaoType *type = DaoException_GetType( DAO_WARNING );
-	DaoException *self = (DaoException*)DaoException_New( type );
-	DaoStream *stream = proc->stdioStream ? proc->stdioStream : proc->vmSpace->stdioStream;
-	DString_Assign( self->info, p[0]->xString.data );
-	DaoException_Init( self, proc, NULL );
-	DaoException_Print( self, stream );
-	DaoException_Delete( self );
-}
-static void DaoBuiltIn_Panic( DaoProcess *proc, DaoValue *p[], int n )
-{
-	DaoType *type = DaoException_GetType( DAO_ERROR );
-	DaoException *self = (DaoException*) DaoValue_CastCstruct( p[0], type );
-	DaoObject *object = DaoValue_CastObject( p[0] );
-	if( self == NULL && object != NULL ){
-		self = (DaoException*) DaoObject_CastCdata( object, type );
-	}
-	if( self == NULL ) self = (DaoException*)DaoException_New2( type, p[0] );
-	DaoException_Init( self, proc, NULL );
-	DArray_Append( proc->exceptions, object ? (void*)object : (void*)self );
-}
-static void DaoBuiltIn_Recover( DaoProcess *proc, DaoValue *p[], int n )
-{
-	DaoList *list = DaoProcess_PutList( proc );
-	DaoStackFrame *frame = proc->topFrame->prev; /* caller frame */
-	if( frame == NULL || frame->prev == NULL || frame->prev == proc->firstFrame ) return;
-	/* recover() will return a list of exceptions only in the first defer codes: */
-	while( proc->exceptions->size > frame->prev->exceptBase ){
-		DaoList_Append( list, DArray_Back( proc->exceptions ) );
-		DArray_PopBack( proc->exceptions );
-	}
-}
-static void DaoBuiltIn_Recover2( DaoProcess *proc, DaoValue *p[], int n )
-{
-	daoint i;
-	DaoValue *ret = NULL;
-	DaoValue *type = p[0];
-	DaoStackFrame *frame = proc->topFrame->prev; /* caller frame */
-
-	if( frame == NULL || frame->prev == NULL || frame->prev == proc->firstFrame ) return;
-	for(i=proc->exceptions->size-1; i>=frame->prev->exceptBase; --i){
-		DaoValue *value = proc->exceptions->items.pValue[i];
-		DaoObject *object = DaoValue_CastObject( value );
-		if( object ){
-			if( DaoClass_ChildOf( object->defClass, type ) ) ret = value;
-		}else if( type->type == DAO_CTYPE ){
-			if( DaoValue_CastCstruct( value, type->xCtype.cdtype ) != NULL ) ret = value;
-		}
-		if( ret ){
-			DArray_Erase( proc->exceptions, i, 1 );
-			break;
-		}
-	}
-	DaoProcess_PutValue( proc, ret ? ret : dao_none_value );
-}
-
-DaoFuncItem dao_builtin_methods[] =
-{
-	{ DaoBuiltIn_Warn,      "warn( message : string )" },
-	{ DaoBuiltIn_Panic,     "panic( value : any )" },
-	{ DaoBuiltIn_Recover,   "recover( ) => list<any>" },
-	{ DaoBuiltIn_Recover2,  "recover( eclass : class<Exception> ) => any" },
-	{ NULL, NULL }
-};
-
 
 
 extern void DaoType_Init();
 
-DaoType *dao_type_udf = NULL;
-DaoType *dao_type_none = NULL;
-DaoType *dao_type_any = NULL;
-DaoType *dao_type_int = NULL;
-DaoType *dao_type_float = NULL;
-DaoType *dao_type_double = NULL;
-DaoType *dao_type_complex = NULL;
-DaoType *dao_type_long = NULL;
-DaoType *dao_type_string = NULL;
-DaoType *dao_type_tuple = NULL;
-DaoType *dao_array_any = NULL;
-DaoType *dao_list_any = NULL;
-DaoType *dao_map_any = NULL;
-DaoType *dao_map_meta = NULL;
-DaoType *dao_routine = NULL;
-DaoType *dao_type_for_iterator = NULL;
-DaoType *dao_access_enum = NULL;
-DaoType *dao_storage_enum = NULL;
-DaoType *dao_dynclass_field = NULL;
-DaoType *dao_dynclass_method = NULL;
-DaoType *dao_array_types[DAO_COMPLEX+1] = {0};
-
-/* name:string,value:any,storage:enum<>,access:enum<> */
-const char *field_typename =
-"tuple<string,any>|tuple<string,any,enum<const,global,var>>|"
-"tuple<string,any,enum<const,global,var>,enum<private,protected,public>>";
-
-/* name:string,method:routine,access:enum<> */
-const char *method_typename =
-"tuple<string,routine>|tuple<string,routine,enum<private,protected,public>>";
-
 
 #ifdef DAO_WITH_THREAD
-DaoType *dao_type_mutex = NULL;
-DaoType *dao_type_condvar = NULL;
-DaoType *dao_type_sema = NULL;
+DaoType *dao_type_channel = NULL;
+DaoType *dao_type_future  = NULL;
 
-extern DMutex mutex_long_sharing;
 extern DMutex mutex_string_sharing;
 extern DMutex mutex_type_map;
 extern DMutex mutex_values_setup;
@@ -2302,42 +2355,35 @@ extern DaoFuncItem dao_io_methods[];
 void print_trace();
 
 extern DMap *dao_cdata_bindings;
-extern DHash *dao_meta_tables;
 
+int DaoVmSpace_TryInitDebugger( DaoVmSpace *self, const char *module )
+{
+	DaoDebugger *debugger = self->debugger;
+	DaoVmSpace_Load( self, module ? module : "debugger" );
+	if( self->debugger != debugger ) return 1;
+	DaoStream_WriteChars( self->errorStream, "Failed to enable debugger!\n" );
+	return 0;
+}
+int DaoVmSpace_TryInitProfiler( DaoVmSpace *self, const char *module )
+{
+	DaoProfiler *profiler = self->profiler;
+	DaoVmSpace_Load( self, module ? module : "profiler" );
+	if( self->profiler && self->profiler != profiler ) return 1;
+	DaoStream_WriteChars( self->errorStream, "Failed to enable profiler!\n" );
+	return 0;
+}
 int DaoVmSpace_TryInitJIT( DaoVmSpace *self, const char *module )
 {
-	DString *name = DString_New(1);
-	void (*init)( DaoVmSpace*, DaoJIT* );
-	void *jitHandle = NULL;
-	if( module ){
-		DString_SetMBS( name, module );
-		jitHandle = Dao_OpenDLL( name->mbs );
-	}else{
-		DString_SetMBS( name, "libDaoJIT" DAO_DLL_SUFFIX );
-		DaoVmSpace_SearchPath( self, name, DAO_FILE_PATH, 1 );
-		if( TestPath( self, name, DAO_FILE_PATH ) ) jitHandle = Dao_OpenDLL( name->mbs );
-		if( jitHandle == NULL ){
-			DString_SetMBS( name, "DaoJIT" DAO_DLL_SUFFIX );
-			DaoVmSpace_SearchPath( self, name, DAO_FILE_PATH, 1 );
-			if( TestPath( self, name, DAO_FILE_PATH ) )  jitHandle = Dao_OpenDLL( name->mbs );
-		}
-	}
-	DString_Delete( name );
-	if( jitHandle == NULL ) return 0;
-	init = (DaoJIT_InitFPT) Dao_GetSymbolAddress( jitHandle, "DaoJIT_Init" );
-	if( init == NULL ) return 0;
-	(*init)( self, & dao_jit );
-	dao_jit.Quit = (DaoJIT_QuitFPT) Dao_GetSymbolAddress( jitHandle, "DaoJIT_Quit" );
-	dao_jit.Free = (DaoJIT_FreeFPT) Dao_GetSymbolAddress( jitHandle, "DaoJIT_Free" );
-	dao_jit.Compile = (DaoJIT_CompileFPT) Dao_GetSymbolAddress( jitHandle, "DaoJIT_Compile" );
-	dao_jit.Execute = (DaoJIT_ExecuteFPT) Dao_GetSymbolAddress( jitHandle, "DaoJIT_Execute" );
-	if( dao_jit.Execute == NULL ) dao_jit.Compile = NULL;
-	return dao_jit.Compile != NULL;
+	DaoVmSpace_Load( self, module ? module : "jit" );
+	if( dao_jit.Compile ) return 1;
+	DaoStream_WriteChars( self->errorStream, "Failed to enable Just-In-Time compiling!\n" );
+	return 0;
 }
+
 static int Dao_GetExecutablePath( const char *command, DString *path )
 {
 	char *PATH = getenv( "PATH" );
-	DString paths = DString_WrapMBS( PATH );
+	DString paths = DString_WrapChars( PATH );
 	daoint i = 0;
 
 	DString_Reset( path, 0 );
@@ -2345,13 +2391,13 @@ static int Dao_GetExecutablePath( const char *command, DString *path )
 
 	while( i < paths.size ){
 		daoint j = DString_FindChar( & paths, DAO_ENV_PATH_SEP, i );
-		daoint len = (j == MAXSIZE) ? paths.size - i : j - i;
-		DString base = DString_WrapBytes( paths.mbs + i, len );
-		DString_SetMBS( path, command );
+		daoint len = (j == DAO_NULLPOS) ? paths.size - i : j - i;
+		DString base = DString_WrapBytes( paths.chars + i, len );
+		DString_SetChars( path, command );
 		Dao_MakePath( & base, path );
 		Dao_NormalizePathSep( path );
-		if( Dao_IsFile( path->mbs ) ) return 1;
-		if( j == MAXSIZE ) break;
+		if( Dao_IsFile( path->chars ) ) return 1;
+		if( j == DAO_NULLPOS ) break;
 		i = j + 1;
 	}
 	return 0;
@@ -2364,24 +2410,20 @@ DaoVmSpace* DaoVmSpace_MainVmSpace()
 }
 DaoVmSpace* DaoInit( const char *command )
 {
-	DString *mbs, *mbs2;
+	DString *mbs;
 	DaoVmSpace *vms;
-	DaoNamespace *ns, *ns2;
-	DaoType *type, *type1, *type2, *type3, *type4;
-	DaoModuleOnLoad fpter;
-	void *handle;
-	daoint i, n;
+	DaoNamespace *daons, *ns2;
+	DaoType *type, *tht;
+	int i;
 
 	if( mainVmSpace ) return mainVmSpace;
 
 	dao_cdata_bindings = DHash_New(0,0);
-	dao_meta_tables = DHash_New(0,0);
 
 	/* signal( SIGSEGV, print_trace ); */
 	/* signal( SIGABRT, print_trace ); */
 
 #ifdef DAO_WITH_THREAD
-	DMutex_Init( & mutex_long_sharing );
 	DMutex_Init( & mutex_string_sharing );
 	DMutex_Init( & mutex_type_map );
 	DMutex_Init( & mutex_values_setup );
@@ -2392,7 +2434,7 @@ DaoVmSpace* DaoInit( const char *command )
 	DMutex_Init( & dao_cdata_mutex );
 #endif
 
-	mbs = DString_New(1);
+	mbs = DString_New();
 	setlocale( LC_CTYPE, "" );
 
 	DaoConfigure();
@@ -2410,6 +2452,9 @@ DaoVmSpace* DaoInit( const char *command )
 #endif
 
 	DaoGC_Start();
+#ifdef DAO_USE_GC_LOGGER
+	DaoObjectLogger_Init();
+#endif
 
 #if 0
 #warning"-------------using concurrent GC by default!"
@@ -2420,17 +2465,16 @@ DaoVmSpace* DaoInit( const char *command )
 	dao_type_any = DaoType_New( "any", DAO_ANY, NULL, NULL );
 	dao_type_int = DaoType_New( "int", DAO_INTEGER, NULL, NULL );
 	dao_type_float = DaoType_New( "float", DAO_FLOAT, NULL, NULL );
-	dao_type_double = DaoType_New( "double", DAO_DOUBLE, NULL, NULL );
 	dao_type_complex = DaoType_New( "complex", DAO_COMPLEX, NULL, NULL );
-	dao_type_long = DaoType_New( "long", DAO_LONG, NULL, NULL );
 	dao_type_string = DaoType_New( "string", DAO_STRING, NULL, NULL );
-	dao_routine = DaoType_New( "routine<=>?>", DAO_ROUTINE, (DaoValue*)dao_type_udf, NULL );
+	dao_type_tht = tht = DaoType_New( "@X", DAO_THT, NULL, NULL );
+	dao_type_routine = DaoType_New( "routine<=>@X>", DAO_ROUTINE, (DaoValue*)tht, NULL );
 
 	mainVmSpace = vms = DaoVmSpace_New();
 
 	DString_Reserve( mainVmSpace->startPath, 512 );
-	getcwd( mainVmSpace->startPath->mbs, 511 );
-	DString_Reset( mainVmSpace->startPath, strlen( mainVmSpace->startPath->mbs ) );
+	getcwd( mainVmSpace->startPath->chars, 511 );
+	DString_Reset( mainVmSpace->startPath, strlen( mainVmSpace->startPath->chars ) );
 	Dao_NormalizePathSep( mainVmSpace->startPath );
 
 	DString_AppendPathSep( mainVmSpace->startPath );
@@ -2438,7 +2482,7 @@ DaoVmSpace* DaoInit( const char *command )
 		DString *mbs = mainVmSpace->daoBinPath;
 		int absolute = command[0] == '/';
 		int relative = command[0] == '.';
-		DString_SetMBS( mbs, command );
+		DString_SetChars( mbs, command );
 		Dao_NormalizePathSep( mbs );
 #ifdef WIN32
 		absolute = isalpha( command[0] ) && command[1] == ':';
@@ -2451,103 +2495,92 @@ DaoVmSpace* DaoInit( const char *command )
 			}
 		}
 #ifdef DEBUG
-		if( ! Dao_IsFile( mbs->mbs ) ){
+		if( ! Dao_IsFile( mbs->chars ) ){
 			printf( "WARNING: the path of the executable cannot be located!" );
 		}
 #endif
-		while( (i = mbs->size) && mbs->mbs[i-1] != '/' && mbs->mbs[i-1] != '\\' ) mbs->size --;
-		mbs->mbs[ mbs->size ] = 0;
+		while( (i = mbs->size) && mbs->chars[i-1] != '/' && mbs->chars[i-1] != '\\' ) mbs->size --;
+		mbs->chars[ mbs->size ] = 0;
 	}
 
-	vms->safeTag = 0;
-	ns = vms->nsInternal;
+	daons = vms->daoNamespace;
 
 	DaoProcess_CacheValue( vms->mainProcess, (DaoValue*) dao_type_udf );
-	DaoProcess_CacheValue( vms->mainProcess, (DaoValue*) dao_routine );
-	DaoNamespace_AddTypeConstant( ns, dao_type_any->name, dao_type_any );
-	DaoNamespace_AddTypeConstant( ns, dao_type_int->name, dao_type_int );
-	DaoNamespace_AddTypeConstant( ns, dao_type_float->name, dao_type_float );
-	DaoNamespace_AddTypeConstant( ns, dao_type_double->name, dao_type_double );
-	DaoNamespace_AddTypeConstant( ns, dao_type_complex->name, dao_type_complex );
-	DaoNamespace_AddTypeConstant( ns, dao_type_long->name, dao_type_long );
-	DaoNamespace_AddTypeConstant( ns, dao_type_string->name, dao_type_string );
+	DaoProcess_CacheValue( vms->mainProcess, (DaoValue*) dao_type_tht );
+	DaoProcess_CacheValue( vms->mainProcess, (DaoValue*) dao_type_routine );
+	DaoNamespace_AddTypeConstant( daons, dao_type_any->name, dao_type_any );
+	DaoNamespace_AddTypeConstant( daons, dao_type_int->name, dao_type_int );
+	DaoNamespace_AddTypeConstant( daons, dao_type_float->name, dao_type_float );
+	DaoNamespace_AddTypeConstant( daons, dao_type_complex->name, dao_type_complex );
+	DaoNamespace_AddTypeConstant( daons, dao_type_string->name, dao_type_string );
 
-	dao_type_none = DaoNamespace_MakeValueType( ns, dao_none_value );
-	dao_type_for_iterator = DaoParser_ParseTypeName( "tuple<valid:int,iterator:any>", ns, NULL );
-	dao_access_enum = DaoNamespace_MakeEnumType( ns, "private,protected,public" );
-	dao_storage_enum = DaoNamespace_MakeEnumType( ns, "const,global,var"  );
-	dao_dynclass_field = DaoParser_ParseTypeName( field_typename, ns, NULL );
-	dao_dynclass_method = DaoParser_ParseTypeName( method_typename, ns, NULL );
+	dao_type_none = DaoNamespace_MakeValueType( daons, dao_none_value );
+	dao_type_for_iterator = DaoParser_ParseTypeName( "tuple<valid:int,iterator:any>", daons, NULL );
 
-	DString_SetMBS( dao_type_for_iterator->name, "for_iterator" );
-	DaoNamespace_AddType( ns, dao_type_for_iterator->name, dao_type_for_iterator );
+	DString_SetChars( dao_type_for_iterator->name, "for_iterator" );
+	DaoNamespace_AddType( daons, dao_type_for_iterator->name, dao_type_for_iterator );
+	DaoNamespace_AddTypeConstant( daons, dao_type_for_iterator->name, dao_type_for_iterator );
 
-	dao_array_any = DaoParser_ParseTypeName( "array<any>", ns, NULL );
-	dao_list_any = DaoParser_ParseTypeName( "list<any>", ns, NULL );
-	dao_map_any = DaoParser_ParseTypeName( "map<any,any>", ns, NULL );
-	dao_map_meta = DaoParser_ParseTypeName( "map<string,any>", ns, NULL );
-	dao_type_tuple = DaoParser_ParseTypeName( "tuple<...>", ns, NULL );
+	dao_type_tuple = DaoParser_ParseTypeName( "tuple<...>", daons, NULL );
 
-	dao_array_types[DAO_NONE] = dao_array_any;
-	dao_array_types[DAO_INTEGER] = DaoNamespace_MakeType( ns, "array", DAO_ARRAY, NULL, & dao_type_int, 1 );
-	dao_array_types[DAO_FLOAT]   = DaoNamespace_MakeType( ns, "array", DAO_ARRAY, NULL, & dao_type_float, 1 );
-	dao_array_types[DAO_DOUBLE]  = DaoNamespace_MakeType( ns, "array", DAO_ARRAY, NULL, & dao_type_double, 1 );
-	dao_array_types[DAO_COMPLEX] = DaoNamespace_MakeType( ns, "array", DAO_ARRAY, NULL, & dao_type_complex, 1 );
+	DaoNamespace_TypeDefine( daons, "enum<false:true>", "bool" );
 
-#ifdef DEBUG
-	DaoNamespace_TypeDefine( ns, "int", "short" );
-	DaoNamespace_WrapType( vms->nsInternal, dao_FakeList_Typer, 1 );
-	DaoNamespace_TypeDefine( ns, "FakeList<short>", "FakeList<int>" );
-#endif
+	DaoNamespace_SetupType( daons, & stringTyper, dao_type_string );
+	DaoNamespace_SetupType( daons, & comTyper, dao_type_complex );
 
 #ifdef DAO_WITH_NUMARRAY
-	DaoNamespace_SetupType( vms->nsInternal, & numarTyper );
+	dao_type_array_template = DaoNamespace_WrapGenericType( daons, & numarTyper, DAO_ARRAY );
+	dao_type_array_empty = DaoType_Specialize( dao_type_array_template, NULL, 0 );
+	dao_type_array_empty = DaoType_GetConstType( dao_type_array_empty );
+	dao_array_types[DAO_NONE] = dao_type_array_empty;
+	dao_array_types[DAO_INTEGER] = DaoType_Specialize( dao_type_array_template, & dao_type_int, 1 );
+	dao_array_types[DAO_FLOAT] = DaoType_Specialize( dao_type_array_template, & dao_type_float, 1 );
+	dao_array_types[DAO_COMPLEX] = DaoType_Specialize( dao_type_array_template, & dao_type_complex, 1 );
 #endif
 
-	DaoNamespace_SetupType( vms->nsInternal, & stringTyper );
-	DaoNamespace_SetupType( vms->nsInternal, & longTyper );
-	DaoNamespace_SetupType( vms->nsInternal, & comTyper );
-	DaoNamespace_SetupType( vms->nsInternal, & listTyper );
-	DaoNamespace_SetupType( vms->nsInternal, & mapTyper );
+	dao_type_list_template = DaoNamespace_WrapGenericType( daons, & listTyper, DAO_LIST );
+	dao_type_map_template = DaoNamespace_WrapGenericType( daons, & mapTyper, DAO_MAP );
 
-	GC_ShiftRC( dao_type_complex, comTyper.core->kernel->abtype );
-	GC_ShiftRC( dao_type_long, longTyper.core->kernel->abtype );
-	GC_ShiftRC( dao_type_string, stringTyper.core->kernel->abtype );
-	comTyper.core->kernel->abtype = dao_type_complex;
-	longTyper.core->kernel->abtype = dao_type_long;
-	stringTyper.core->kernel->abtype = dao_type_string;
+	dao_type_list_any = DaoType_Specialize( dao_type_list_template, NULL, 0 );
+	dao_type_map_any  = DaoType_Specialize( dao_type_map_template, NULL, 0 );
+
+	/*
+	// These types should not be accessible by developers using type annotation.
+	*/
+	dao_type_list_empty = DaoType_Copy( dao_type_list_any );
+	dao_type_map_empty = DaoType_Copy( dao_type_map_any );
+	dao_type_list_empty = DaoType_GetConstType( dao_type_list_empty );
+	dao_type_map_empty = DaoType_GetConstType( dao_type_map_empty );
+	DaoProcess_CacheValue( vms->mainProcess, (DaoValue*) dao_type_list_empty );
+	DaoProcess_CacheValue( vms->mainProcess, (DaoValue*) dao_type_map_empty );
 
 	ns2 = DaoVmSpace_GetNamespace( vms, "io" );
-	DaoNamespace_AddConstValue( ns, "io", (DaoValue*) ns2 );
+	DaoNamespace_AddConstValue( daons, "io", (DaoValue*) ns2 );
 	dao_type_stream = DaoNamespace_WrapType( ns2, & streamTyper, 0 );
-	GC_ShiftRC( dao_type_stream, vms->stdioStream->ctype );
-	vms->stdioStream->ctype = dao_type_stream;
+	GC_Assign( & vms->stdioStream->ctype, dao_type_stream );
+	GC_Assign( & vms->errorStream->ctype, dao_type_stream );
 	DaoNamespace_WrapFunctions( ns2, dao_io_methods );
-	DaoNamespace_AddConstValue( ns2, "stdio", (DaoValue*) vms->stdioStream );
+	DaoNamespace_AddConstValue( ns2, "stdio",  (DaoValue*) vms->stdioStream );
+	DaoNamespace_AddConstValue( ns2, "stderr", (DaoValue*) vms->errorStream );
 
-	dao_default_cdata.ctype = DaoNamespace_WrapType( vms->nsInternal, & defaultCdataTyper, 1 );
-	GC_IncRC( dao_default_cdata.ctype );
+	dao_type_cdata = DaoNamespace_WrapType( vms->daoNamespace, & defaultCdataTyper, 1 );
 
-	DaoException_Setup( vms->nsInternal );
+	DaoException_Setup( vms->daoNamespace );
 
 #ifdef DAO_WITH_CONCURRENT
 	ns2 = DaoVmSpace_GetNamespace( vms, "mt" );
-	DaoNamespace_AddConstValue( ns, "mt", (DaoValue*) ns2 );
-	dao_type_mutex = DaoNamespace_WrapType( ns2, & mutexTyper, 0 );
-	dao_type_condvar = DaoNamespace_WrapType( ns2, & condvTyper, 0 );
-	dao_type_sema = DaoNamespace_WrapType( ns2, & semaTyper, 0 );
-	DaoNamespace_SetupType( ns2, & futureTyper );
+	DaoNamespace_AddConstValue( daons, "mt", (DaoValue*) ns2 );
+	dao_type_channel = DaoNamespace_WrapType( ns2, & channelTyper, 0 );
+	dao_type_future  = DaoNamespace_WrapType( ns2, & futureTyper, 0 );
 	DaoNamespace_WrapFunctions( ns2, dao_mt_methods );
 #endif
-	DaoNamespace_SetupType( vms->nsInternal, & vmpTyper );
+	DaoNamespace_SetupType( vms->daoNamespace, & vmpTyper, NULL );
 
 	ns2 = DaoVmSpace_GetNamespace( vms, "std" );
-	DaoNamespace_AddConstValue( ns, "std", (DaoValue*) ns2 );
+	DaoNamespace_AddConstValue( daons, "std", (DaoValue*) ns2 );
 	DaoNamespace_WrapFunctions( ns2, dao_std_methods );
 
-	DaoNamespace_WrapFunctions( ns, dao_builtin_methods );
-
-	DaoNamespace_AddParent( vms->mainNamespace, vms->nsInternal );
+	DaoNamespace_AddParent( vms->mainNamespace, vms->daoNamespace );
 
 	DaoVmSpace_InitPath( vms );
 
@@ -2555,7 +2588,6 @@ DaoVmSpace* DaoInit( const char *command )
 	   printf( "initialized...\n" );
 	 */
 	DString_Delete( mbs );
-	vms->safeTag = 1;
 	return vms;
 }
 extern DaoType* DaoParser_ParseTypeName( const char *type, DaoNamespace *ns, DaoClass *cls );
@@ -2572,8 +2604,10 @@ void DaoQuit()
 
 	if( daoConfig.iscgi ) return;
 
-	GC_DecRC( dao_default_cdata.ctype );
-	dao_default_cdata.ctype = NULL;
+	if( (mainVmSpace->options & DAO_OPTION_PROFILE) && mainVmSpace->profiler ){
+		DaoProfiler *profiler = mainVmSpace->profiler;
+		if( profiler->Report ) profiler->Report( profiler, mainVmSpace->stdioStream );
+	}
 
 	DaoVmSpace_DeleteData( mainVmSpace );
 	for(i=0; i<DAO_ARRAY; i++){
@@ -2584,14 +2618,15 @@ void DaoQuit()
 #ifdef DEBUG
 	for(it=DMap_First(mainVmSpace->nsModules); it; it=DMap_Next(mainVmSpace->nsModules,it) ){
 		printf( "Warning: namespace/module \"%s\" is not collected with reference count %i!\n",
-				((DaoNamespace*)it->value.pValue)->name->mbs, it->value.pValue->xBase.refCount );
+				((DaoNamespace*)it->value.pValue)->name->chars, it->value.pValue->xBase.refCount );
 	}
 #endif
 	DaoVmSpace_Delete( mainVmSpace );
+#ifdef DAO_USE_GC_LOGGER
+	DaoObjectLogger_Quit();
+#endif
 	DMap_Delete( dao_cdata_bindings );
-	DMap_Delete( dao_meta_tables );
 	dao_cdata_bindings = NULL;
-	dao_meta_tables = NULL;
 	dao_type_stream = NULL;
 	mainVmSpace = NULL;
 	mainProcess = NULL;
@@ -2603,7 +2638,6 @@ void DaoQuit()
 		dao_jit.Execute = NULL;
 	}
 #ifdef DAO_WITH_THREAD
-	DMutex_Destroy( & mutex_long_sharing );
 	DMutex_Destroy( & mutex_string_sharing );
 	DMutex_Destroy( & mutex_type_map );
 	DMutex_Destroy( & mutex_values_setup );
@@ -2618,16 +2652,15 @@ DaoNamespace* DaoVmSpace_FindModule( DaoVmSpace *self, DString *fname )
 {
 	DaoNamespace* ns = DaoVmSpace_FindNamespace( self, fname );
 	if( ns ) return ns;
-	DaoVmSpace_CompleteModuleName( self, fname );
+	DaoVmSpace_CompleteModuleName( self, fname, DAO_MODULE_ANY );
 	return DaoVmSpace_FindNamespace( self, fname );
 }
 DaoNamespace* DaoVmSpace_LoadModule( DaoVmSpace *self, DString *fname )
 {
 	DaoNamespace *ns = NULL;
-#if 0
-	printf( "modtype = %i\n", modtype );
-#endif
-	switch( DaoVmSpace_CompleteModuleName( self, fname ) ){
+	int modtype = DAO_MODULE_ANY;
+	if( self->options & DAO_OPTION_COMP_BC ) modtype = DAO_MODULE_DAO | DAO_MODULE_DLL;
+	switch( DaoVmSpace_CompleteModuleName( self, fname, modtype ) ){
 	case DAO_MODULE_DAC :
 	case DAO_MODULE_DAO : ns = DaoVmSpace_LoadDaoModule( self, fname ); break;
 	case DAO_MODULE_DLL : ns = DaoVmSpace_LoadDllModule( self, fname ); break;
@@ -2635,3 +2668,50 @@ DaoNamespace* DaoVmSpace_LoadModule( DaoVmSpace *self, DString *fname )
 	return ns;
 }
 
+
+DaoType* DaoVmSpace_MakeExceptionType( DaoVmSpace *self, const char *name )
+{
+	DaoTypeBase *typer;
+	DaoValue *value;
+	DaoType *type, *parent = NULL;
+	DString *basename, sub;
+	daoint i, offset = 0;
+
+	if( strcmp( name, "Exception" ) == 0 ) return  dao_type_exception;
+	if( strcmp( name, "Warning" ) == 0 ) return  dao_type_warning;
+	if( strcmp( name, "Error" ) == 0 ) return  dao_type_error;
+
+	basename = DString_NewChars( name );
+	offset = DString_RFindChars( basename, "::", -1 );
+	if( offset != DAO_NULLPOS ){
+		DString_Erase( basename, offset - 1, -1 );
+		parent = DaoVmSpace_MakeExceptionType( self, basename->chars );
+		offset += 1;
+	}
+	DString_Delete( basename );
+	if( parent == NULL ) return NULL;
+
+	sub = DString_WrapChars( name + offset );
+	value = DaoType_FindValueOnly( parent, & sub );
+	if( value != NULL ){
+		if( value->type == DAO_CTYPE ) return value->xCtype.cdtype;
+		return NULL;
+	}
+
+	typer = (DaoTypeBase*) dao_calloc( 1, sizeof(DaoTypeBase) );
+	typer->name = (char*) dao_malloc( (strlen(name)+1) * sizeof(char) );
+	strcpy( (char*) typer->name, name );
+	typer->supers[0] = parent->typer;
+	typer->Delete = parent->typer->Delete;
+	typer->GetGCFields = parent->typer->GetGCFields;
+	type = DaoNamespace_WrapType( self->daoNamespace, typer, 0 );
+	type->kernel->attribs |= DAO_TYPER_FREE;
+
+	for(i=DAO_EXCEPTION; i<ENDOF_BASIC_EXCEPT; i++){
+		if( strcmp( typer->name, daoExceptionNames[i] ) == 0 ){
+			DString_SetChars( type->aux->xCtype.info, daoExceptionTitles[i] );
+			break;
+		}
+	}
+	return type;
+}

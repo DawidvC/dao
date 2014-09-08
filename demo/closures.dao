@@ -2,9 +2,6 @@
 # Anonymous functions and closures can be created using the same syntax
 # as defining a normal function but without function name. For example,
 #     rout = routine( a :int ){ io.writeln( a ) }
-#     rout = @( a :int ){ io.writeln( a ) }
-# The above two are equivalent, except that "routine" started anonymous
-# function or closure must be used inside an expression.
 #
 # In anonymous functions or closures, the default parameters can be
 # non-constant expressions that will be evaluated at the time of creation
@@ -35,11 +32,11 @@ for( closure in closures ) closure()
 
 routine Test()
 {
-	abc = 'abc'
+	abc = "abc"
 	rout = routine(){
-		io.writeln( 'outer closure', abc )
+		io.writeln( "outer closure", abc )
 		rout = routine(){
-			io.writeln( 'inner closure', abc )
+			io.writeln( "inner closure", abc )
 		}
 		return rout;
 	}

@@ -2,7 +2,7 @@
 // Dao Virtual Machine
 // http://www.daovm.net
 //
-// Copyright (c) 2006-2013, Limin Fu
+// Copyright (c) 2006-2014, Limin Fu
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -14,21 +14,21 @@
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-// SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
-// OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED  BY THE COPYRIGHT HOLDERS AND  CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED  WARRANTIES,  INCLUDING,  BUT NOT LIMITED TO,  THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL  THE COPYRIGHT HOLDER OR CONTRIBUTORS  BE LIABLE FOR ANY DIRECT,
+// INDIRECT,  INCIDENTAL, SPECIAL,  EXEMPLARY,  OR CONSEQUENTIAL  DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO,  PROCUREMENT OF  SUBSTITUTE  GOODS OR  SERVICES;  LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION)  HOWEVER CAUSED  AND ON ANY THEORY OF
+// LIABILITY,  WHETHER IN CONTRACT,  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+// OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include"stdlib.h"
 #include"stdio.h"
 #include"string.h"
-#include"locale.h"
 #include"ctype.h"
 
 #include"daoConst.h"
@@ -48,14 +48,14 @@ const char *const dao_oper_tokens[] =
 	"id" ,
 	"@id" ,
 	"$id" ,
-	"0x0" ,
 	"0.0" ,
 	"0x0" ,
-	"0.0" ,
+	"0F" ,
 	"0D" ,
-	"0$" ,
-	"0e0" ,
-	"[=[]=]",
+	"0.0" ,
+	"0E0" ,
+	"0C" ,
+	"@[]@[]",
 	"\'\'" ,
 	"\"\"" ,
 	" " ,
@@ -68,11 +68,11 @@ const char *const dao_oper_tokens[] =
 	"}" ,
 	"[" ,
 	"]" ,
-	"=" ,
 	"." ,
-	" ," ,
+	"," ,
 	":" ,
 	"::" ,
+	"=" ,
 	"+" ,
 	"-" ,
 	"*" ,
@@ -86,12 +86,11 @@ const char *const dao_oper_tokens[] =
 	"~" ,
 	"$" ,
 	"@" ,
-	"@@" ,
+	"!!" ,
 	"**" ,
 	"&&" ,
 	"||" ,
 	"not in",
-	":=" ,
 	"+=" ,
 	"-=" ,
 	"*=" ,
@@ -115,51 +114,32 @@ const char *const dao_oper_tokens[] =
 	"++" ,
 	"--" ,
 	"..." ,
-	"\\(" ,
-	"\\)" ,
-	"\\{" ,
-	"\\}" ,
-	"\\[" ,
-	"\\]" ,
-	"\\|" ,
-	"\\!" ,
-	"\\?" ,
-	"\\*" ,
-	"\\+" ,
-	"\\'" ,
-	"\\\"" ,
 	""
 };
 
 DIntStringPair dao_keywords[] =
 {
-	{ 100, "use" } ,
 	{ 100, "load" } ,
+	{ 100, "import" } ,
 	{   0, "as" } ,
-	{ 100, "syntax" } ,
 	{ DAO_CLASS, "class" } ,
-	{ 0, "sub" } ,
 	{ DAO_ROUTINE, "routine" } , /* for typing */
-	{ 0, "function" } ,
 	{ 100, "operator" } ,
 	{ 100, "interface" } ,
+	{ DAO_NAMESPACE, "namespace" } ,
 	{ 0, "self" } ,
 	{ DAO_TYPE, "type" } ,
 	{ DAO_ANY, "any" } ,
 	{ DAO_NONE, "none" } ,
 	{ DAO_INTEGER, "int" } ,
 	{ DAO_FLOAT, "float" } ,
-	{ DAO_DOUBLE, "double" } ,
 	{ DAO_COMPLEX, "complex" } ,
-	{ DAO_LONG, "long" } ,
 	{ DAO_STRING, "string" } ,
 	{ DAO_ENUM, "enum" } ,
 	{ DAO_ARRAY, "array" } ,
-	{ DAO_TUPLE, "tuple" } ,
-	{ DAO_MAP, "map" } ,
 	{ DAO_LIST, "list" } ,
-	{ DAO_CDATA, "cdata" } ,
-	{ DAO_FUTURE, "future" } ,
+	{ DAO_MAP, "map" } ,
+	{ DAO_TUPLE, "tuple" } ,
 	{   0, "and" } ,
 	{   0, "or" } ,
 	{   0, "not" } ,
@@ -173,19 +153,17 @@ DIntStringPair dao_keywords[] =
 	{ 100, "case" } ,
 	{ 100, "default" } ,
 	{ 100, "break" } ,
-	{ 100, "continue" } ,
 	{ 100, "skip" } ,
 	{ 100, "defer" } ,
 	{ 100, "return" } ,
 	{   0, "yield" } ,
 	{ 100, "const" } ,
-	{ 100, "global" } ,
 	{ 100, "static" } ,
+	{ 100, "invar" } ,
 	{ 100, "var" } ,
 	{ 100, "private" } ,
 	{ 100, "protected" } ,
 	{ 100, "public" } ,
-	{ 100, "virtual" } ,
 	{ 200, "rand" } ,
 	{ 200, "ceil" } ,
 	{ 200, "floor" } ,
@@ -206,193 +184,181 @@ DIntStringPair dao_keywords[] =
 	{ 200, "sqrt" } ,
 	{ 200, "tan" } ,
 	{ 200, "tanh" } ,
-	{ 0, "#init" } ,
 	{ 0, NULL }
 };
 
 /* by gperf */
 enum
 {
-	TOTAL_KEYWORDS = 73,
+	TOTAL_KEYWORDS = 65,
 	MIN_WORD_LENGTH = 2,
 	MAX_WORD_LENGTH = 9,
-	MIN_HASH_VALUE = 3,
-	MAX_HASH_VALUE = 219
+	MIN_HASH_VALUE = 8,
+	MAX_HASH_VALUE = 160
 };
 
 static const unsigned char asso_values[] =
 {
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220,  15,   5,   5,
-	30 ,  10,  50,  65,  90,  60, 220,  50,  20,  90,
-	0  ,   0,  60,   0,  25,   5,   0,  25,  30,   0,
-	25 ,  35, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220, 220, 220, 220, 220,
-	220, 220, 220, 220, 220, 220
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161,  10,   0,  20,
+	45 ,   5,  20,  30,  90,  30, 161,  25,  40,  55,
+	0  ,   0,  20,  95,  25,   0,   5,   0,   5,   5,
+	0  ,  80, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+	161, 161, 161, 161, 161, 161
 };
+
+/*
+// io.read('kernel/daoLexer.h').extract('DKEY_%w+').iterate{io.writeln(X[5:].convert($lower))}
+//
+//  s/""/{0,""}/g
+//  s/"\(\w\+\)"/{DKEY_\U\1,\L"\1"}/g
+*/
 
 static DIntStringPair wordlist[] =
 {
-      {0,""}, {0,""}, {0,""},
-      {DKEY_NOT,"not"},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {DKEY_SQRT,"sqrt"},
-      {DKEY_CONST,"const"},
-      {0,""}, {0,""},
-      {DKEY_COS,"cos"},
-      {DKEY_NONE,"none"},
-      {0,""},
-      {DKEY_STATIC,"static"},
-      {0,""},
-      {DKEY_TAN,"tan"},
-      {DKEY_ATAN,"atan"},
-      {0,""}, {0,""}, {0,""},
-      {DKEY_CONTINUE,"continue"},
-      {DKEY_ASIN,"asin"},
-      {0,""}, {0,""},
-      {DKEY_AS,"as"},
-      {DKEY_ABS,"abs"},
-      {DKEY_ACOS,"acos"},
-      {0,""}, {0,""},
-      {DKEY_DO,"do"},
-      {0,""},
-      {DKEY_CASE,"case"},
-      {DKEY_CLASS,"class"},
-      {0,""},
-      {DKEY_COMPLEX,"complex"},
-      {DKEY_SUB,"sub"},
-      {DKEY_CEIL,"ceil"},
-      {DKEY_TUPLE,"tuple"},
-      {DKEY_RETURN,"return"},
-      {DKEY_ROUTINE,"routine"},
-      {DKEY_USE,"use"},
-      {DKEY_ELSE,"else"},
-      {0,""},
-      {DKEY_DOUBLE,"double"},
-      {DKEY_DEFAULT,"default"},
-      {DKEY_AND,"and"},
-      {DKEY_TYPE,"type"},
-      {0,""}, {0,""},
-      {DKEY_OR,"or"},
-      {DKEY_ANY,"any"},
-      {DKEY_LOAD,"load"},
-      {DKEY_CDATA,"cdata"},
-      {0,""}, {0,""}, {0,""},
-      {DKEY_REAL,"real"},
-      {0,""}, {0,""},
-      {DKEY_IN,"in"},
-      {DKEY_INT,"int"},
-      {0,""}, {0,""}, {0,""}, {0,""},
-      {DKEY_SIN,"sin"},
-      {DKEY_SELF,"self"},
-      {DKEY_DEFER,"defer"},
-      {DKEY_SYNTAX,"syntax"},
-      {0,""},
-      {DKEY_VAR,"var"},
-      {DKEY_RAND,"rand"},
-      {DKEY_FLOAT,"float"},
-      {DKEY_STRING,"string"},
-      {0,""},
-      {DKEY_FOR,"for"},
-      {DKEY_INTERFACE,"interface"},
-      {DKEY_ARRAY,"array"},
-      {0,""}, {0,""},
-      {DKEY_FUNCTION,"function"},
-      {DKEY_LIST,"list"},
-      {DKEY_BREAK,"break"},
-      {0,""}, {0,""},
-      {DKEY_LOG,"log"},
-      {DKEY_LONG,"long"},
-      {0,""},
-      {DKEY_FUTURE,"future"},
-      {0,""},
-      {DKEY_OPERATOR,"operator"},
-      {DKEY_NORM,"norm"},
-      {0,""},
-      {DKEY_PUBLIC,"public"},
-      {0,""},
-      {DKEY_EXP,"exp"},
-      {DKEY_COSH,"cosh"},
-      {DKEY_FLOOR,"floor"},
-      {DKEY_SWITCH,"switch"},
-      {DKEY_PRIVATE,"private"},
-      {0,""},
-      {DKEY_ENUM,"enum"},
-      {DKEY_WHILE,"while"},
-      {0,""}, {0,""},
-      {DKEY_ARG,"arg"},
-      {DKEY_TANH,"tanh"},
-      {0,""},
-      {DKEY_GLOBAL,"global"},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {DKEY_VIRTUAL,"virtual"},
-      {0,""},
-      {DKEY_SKIP,"skip"},
-      {0,""}, {0,""}, {0,""}, {0,""},
-      {DKEY_PROTECTED,"protected"},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {DKEY_YIELD,"yield"},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {0,""},
-      {DKEY_SINH,"sinh"},
-      {0,""}, {0,""},
-      {DKEY_IF,"if"},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {DKEY_MAP,"map"},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
-      {DKEY_IMAG,"imag"}
+	{0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
+	{DKEY_NOT,"not"},
+	{DKEY_NONE,"none"},
+	{0,""}, {0,""},
+	{DKEY_AS,"as"},
+	{DKEY_ABS,"abs"},
+	{DKEY_ASIN,"asin"},
+	{DKEY_TUPLE,"tuple"},
+	{0,""}, {0,""},
+	{DKEY_TAN,"tan"},
+	{DKEY_ATAN,"atan"},
+	{0,""}, {0,""}, {0,""},
+	{DKEY_COS,"cos"},
+	{DKEY_NAMESPACE,"namespace"},
+	{0,""}, {0,""},
+	{DKEY_COMPLEX,"complex"},
+	{DKEY_EXP,"exp"},
+	{DKEY_SELF,"self"},
+	{DKEY_CONST,"const"},
+	{DKEY_STATIC,"static"},
+	{DKEY_IN,"in"},
+	{DKEY_SIN,"sin"},
+	{DKEY_ACOS,"acos"},
+	{0,""},
+	{DKEY_RETURN,"return"},
+	{DKEY_ROUTINE,"routine"},
+	{DKEY_INT,"int"},
+	{DKEY_CASE,"case"},
+	{0,""},
+	{DKEY_STRING,"string"},
+	{0,""},
+	{DKEY_VAR,"var"},
+	{DKEY_INTERFACE,"interface"},
+	{0,""},
+	{DKEY_PUBLIC,"public"},
+	{DKEY_DO,"do"},
+	{DKEY_FOR,"for"},
+	{DKEY_SKIP,"skip"},
+	{0,""}, {0,""},
+	{DKEY_OR,"or"},
+	{DKEY_OPERATOR,"operator"},
+	{DKEY_ELSE,"else"},
+	{DKEY_BREAK,"break"},
+	{0,""},
+	{DKEY_PRIVATE,"private"},
+	{DKEY_AND,"and"},
+	{DKEY_NORM,"norm"},
+	{DKEY_INVAR,"invar"},
+	{0,""},
+	{DKEY_DEFAULT,"default"},
+	{0,""},
+	{DKEY_ENUM,"enum"},
+	{DKEY_CLASS,"class"},
+	{0,""}, {0,""},
+	{DKEY_ARG,"arg"},
+	{DKEY_CEIL,"ceil"},
+	{DKEY_FLOAT,"float"},
+	{0,""},
+	{DKEY_IF,"if"},
+	{DKEY_LOG,"log"},
+	{DKEY_REAL,"real"},
+	{0,""}, {0,""}, {0,""}, {0,""},
+	{DKEY_LIST,"list"},
+	{DKEY_DEFER,"defer"},
+	{0,""}, {0,""}, {0,""},
+	{DKEY_RAND,"rand"},
+	{0,""}, {0,""}, {0,""},
+	{DKEY_MAP,"map"},
+	{DKEY_LOAD,"load"},
+	{DKEY_FLOOR,"floor"},
+	{0,""}, {0,""},
+	{DKEY_ANY,"any"},
+	{DKEY_TYPE,"type"},
+	{0,""},
+	{DKEY_IMPORT,"import"},
+	{0,""}, {0,""},
+	{DKEY_PROTECTED,"protected"},
+	{0,""},
+	{DKEY_SWITCH,"switch"},
+	{0,""}, {0,""},
+	{DKEY_SQRT,"sqrt"},
+	{DKEY_WHILE,"while"},
+	{0,""}, {0,""}, {0,""},
+	{DKEY_TANH,"tanh"},
+	{0,""}, {0,""}, {0,""}, {0,""},
+	{DKEY_COSH,"cosh"},
+	{0,""}, {0,""}, {0,""}, {0,""},
+	{DKEY_IMAG,"imag"},
+	{DKEY_ARRAY,"array"},
+	{0,""}, {0,""}, {0,""},
+	{DKEY_SINH,"sinh"},
+	{0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
+	{0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
+	{0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
+	{0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""}, {0,""},
+	{DKEY_YIELD,"yield"}
 };
 
 enum
 {
-	LEX_ENV_NORMAL ,
-	LEX_ENV_COMMENT
+	DAO_LEX_CODE ,
+	DAO_LEX_COMMENT_LINE ,
+	DAO_LEX_COMMENT_BLOCK
 };
 
 enum
 {
-	TOK_RESTART , /* emit token, and change to states[TOKEN_START][ char ] */
+	TOK_RESTART_DOT ,  /* emit token, and restart a new token of a single dot; */
+	TOK_RESTART_HASH , /* emit token, and restart a new token of comment; */
+	TOK_RESTART ,  /* emit token, and restart a new token; */
 	TOK_START ,
 	TOK_DIGITS_0 ,
 	TOK_DIGITS_0X ,
 	TOK_DIGITS_DEC ,
-	TOK_DIGITS_HEX ,
 	TOK_DOT_DIGITS , /* .12 */
 	TOK_DIGITS_DOT , /* 12. */
 	TOK_NUMBER_DEC ,
-	TOK_DOUBLE_DEC ,
-	TOK_NUMBER_IMG ,
 	TOK_NUMBER_HEX ,
 	TOK_NUMBER_SCI_E , /* 1.2e */
 	TOK_NUMBER_SCI_ES , /* 1.2e+ */
 	TOK_NUMBER_SCI ,
-	TOK_VERBATIM , /* @[ or @@[ */
+	TOK_NUMBER_IMG ,
+	TOK_VERBATIM , /* @[ */
 	TOK_STRING_MBS ,
 	TOK_STRING_WCS ,
 	TOK_IDENTIFIER , /* a...z, A...Z, _, utf... */
@@ -414,24 +380,21 @@ enum
 	TOK_OP_GT ,
 	TOK_OP_DOT ,
 	TOK_OP_AT , /* @ */
-	TOK_OP_AT2 , /* @@, obsolete */
+	TOK_OP_BANG2 ,
 	TOK_OP_QUEST ,
 	TOK_OP_IMG ,
 	TOK_OP_TILDE ,
 	TOK_OP_DOT2 ,
-	TOK_OP_SHARP ,
 	TOK_OP_ESC , /* \ */
-	TOK_OP_RGXM , /* obsolete */
-	TOK_OP_RGXU , /* obsolete */
-	TOK_OP_RGXA , /* obsolete */
 	TOK_COMT_LINE ,
 	TOK_COMT_OPEN ,
 	TOK_COMT_CLOSE ,
-
 	TOK_END , /* emit token + char, and change to TOKEN_START */
-	TOK_END_CMT ,
 	TOK_END_MBS ,
 	TOK_END_WCS ,
+	TOK_END_SPACE ,
+	TOK_END_TAB ,
+	TOK_END_NEWLN ,
 	TOK_END_LB ,  /* () */
 	TOK_END_RB ,
 	TOK_END_LCB ,  /* {} */
@@ -450,11 +413,9 @@ enum
 	TOK_END_TISA , /* ?<, Type IS A */
 	TOK_END_LSHIFT ,  /* << */
 	TOK_END_RSHIFT , /* >> */
-	TOK_END_APPXTO , /* ~> */
 	TOK_END_ARROW ,  /* -> */
 	TOK_END_FIELD ,  /* => */
 	TOK_END_COLON2 , /* :: */
-	TOK_EQ_COLON ,  /* := */
 	TOK_EQ_ADD ,  /* += */
 	TOK_EQ_SUB ,  /* -= */
 	TOK_EQ_MUL ,  /* *= */
@@ -467,40 +428,26 @@ enum
 	TOK_EQ_EQ ,  /* == */
 	TOK_EQ_LT ,  /* <= */
 	TOK_EQ_GT ,  /* >= */
-	TOK_ESC_LB ,  /* \( */
-	TOK_ESC_RB ,  /* \] */
-	TOK_ESC_LCB ,  /* \{ */
-	TOK_ESC_RCB ,  /* \} */
-	TOK_ESC_LSB ,  /* \[ */
-	TOK_ESC_RSB ,  /* \] */
-	TOK_ESC_PIPE ,  /* \| */
-	TOK_ESC_EXCLA ,  /* \! */
-	TOK_ESC_QUES ,  /* \? */
-	TOK_ESC_STAR ,  /* \* */
-	TOK_ESC_PLUS ,  /* \+ */
-	TOK_ESC_SQUO ,  /* \' */
-	TOK_ESC_DQUO ,  /* \" */
 	TOK_ERROR /* emit error */
 };
-static unsigned char daoSpaceType[128] = {0};
 static unsigned char daoLexTable[ TOK_ERROR ][128] = { { TOK_ERROR + 1 } };
 static unsigned char daoTokenMap[ TOK_ERROR ] =
 {
-	DTOK_NONE , /* emit token, and change to states[TOKEN_START][ char ] */
+	DTOK_NONE ,
+	DTOK_NONE ,
+	DTOK_NONE ,
 	DTOK_NONE ,
 	DTOK_DIGITS_DEC ,
-	DTOK_DIGITS_HEX ,
+	DTOK_NONE ,
 	DTOK_DIGITS_DEC ,
-	DTOK_DIGITS_HEX ,
 	DTOK_NUMBER_DEC , /* .12 */
 	DTOK_NUMBER_DEC , /* 12. */
 	DTOK_NUMBER_DEC ,
-	DTOK_DOUBLE_DEC ,
-	DTOK_NUMBER_IMG ,
 	DTOK_NUMBER_HEX ,
 	DTOK_NUMBER_SCI , /* 1.2e */
 	DTOK_NUMBER_SCI , /* 1.2e+ */
 	DTOK_NUMBER_SCI ,
+	DTOK_NUMBER_IMG ,
 	DTOK_VBT_OPEN ,
 	DTOK_MBS_OPEN ,
 	DTOK_WCS_OPEN ,
@@ -523,24 +470,21 @@ static unsigned char daoTokenMap[ TOK_ERROR ] =
 	DTOK_GT ,
 	DTOK_DOT ,
 	DTOK_AT , /* @ */
-	DTOK_AT2 , /* @@ */
+	DTOK_BANG2 ,
 	DTOK_QUERY ,
 	DTOK_DOLLAR ,
 	DTOK_TILDE ,
 	DTOK_NONE ,
-	DTOK_COMMENT , /* # */
 	DTOK_NONE , /* \ */
-	DTOK_NONE , /* =~ */
-	DTOK_NONE ,
-	DTOK_NONE ,
 	DTOK_COMMENT ,
 	DTOK_CMT_OPEN ,
 	DTOK_COMMENT ,
-
-	DTOK_NONE , /* emit token + char, and change to TOKEN_START */
-	DTOK_COMMENT ,
+	DTOK_NONE , /* TOK_END, emit token + char, and change to TOKEN_START */
 	DTOK_MBS ,
 	DTOK_WCS ,
+	DTOK_SPACE ,
+	DTOK_TAB ,
+	DTOK_NEWLN ,
 	DTOK_LB ,  /* () */
 	DTOK_RB ,
 	DTOK_LCB ,  /* {} */
@@ -559,11 +503,9 @@ static unsigned char daoTokenMap[ TOK_ERROR ] =
 	DTOK_TISA , /* ?<, Type IS A */
 	DTOK_LSHIFT ,  /* << */
 	DTOK_RSHIFT , /* >> */
-	DTOK_APPXTO ,  /* ~> */
 	DTOK_ARROW ,   /* -> */
 	DTOK_FIELD ,   /* => */
 	DTOK_COLON2 ,  /* :: */
-	DTOK_CASSN ,   /* := */
 	DTOK_ADDASN ,  /* += */
 	DTOK_SUBASN ,  /* -= */
 	DTOK_MULASN ,  /* *= */
@@ -576,23 +518,15 @@ static unsigned char daoTokenMap[ TOK_ERROR ] =
 	DTOK_EQ ,  /* == */
 	DTOK_LE ,  /* <= */
 	DTOK_GE ,  /* >= */
-	DTOK_ESC_LB ,  /* \( */
-	DTOK_ESC_RB ,  /* \] */
-	DTOK_ESC_LCB ,  /* \{ */
-	DTOK_ESC_RCB ,  /* \} */
-	DTOK_ESC_LSB ,  /* \[ */
-	DTOK_ESC_RSB ,  /* \] */
-	DTOK_ESC_PIPE ,  /* \| */
-	DTOK_ESC_EXCLA ,  /* \! */
-	DTOK_ESC_QUES ,  /* \? */
-	DTOK_ESC_STAR ,  /* \* */
-	DTOK_ESC_PLUS ,  /* \+ */
-	DTOK_ESC_SQUO ,  /* \' */
-	DTOK_ESC_DQUO ,  /* \" */
 };
 
 
 DOper daoArithOper[DAO_NOKEY2];
+
+DOper DaoLexer_GetTokenOperInfo( int token )
+{
+	return daoArithOper[token];
+}
 
 static int dao_hash( const char *str0, int len)
 {
@@ -619,20 +553,11 @@ void DaoInitLexTable()
 	int i, j = DAO_NOKEY1+1;
 	if( daoLexTable[0][0] <= TOK_ERROR ) return;
 	memset( daoLexTable, TOK_RESTART, 128 * TOK_ERROR * sizeof(char) );
-	memset( daoSpaceType, DTOK_NONE, 128 * sizeof(char) );
 	memset( daoLexTable[TOK_NUMBER_SCI_E], TOK_ERROR, 128 * sizeof(char) );
 	memset( daoLexTable[TOK_NUMBER_SCI_ES], TOK_ERROR, 128 * sizeof(char) );
-	daoSpaceType[ (unsigned) ' ' ] = DTOK_BLANK;
-	daoSpaceType[ (unsigned) '\t' ] = DTOK_TAB;
-	daoSpaceType[ (unsigned) '\n' ] = DTOK_NEWLN;
-	daoSpaceType[ (unsigned) '\r' ] = DTOK_NEWLN;
 	for(j=0; j<128; j++){
 		daoLexTable[ TOK_LSB ][j] = TOK_RESTART;
-		daoLexTable[ TOK_OP_RGXM ][ j ] = TOK_RESTART;
-		daoLexTable[ TOK_OP_RGXU ][ j ] = TOK_RESTART;
-		daoLexTable[ TOK_OP_RGXA ][ j ] = TOK_RESTART;
 		daoLexTable[ TOK_OP_ESC ][j] = TOK_END;
-		daoLexTable[ TOK_OP_SHARP ][j] = TOK_COMT_LINE;
 		daoLexTable[ TOK_COMT_LINE ][j] = TOK_COMT_LINE;
 		daoLexTable[ TOK_STRING_MBS ][ j ] = TOK_STRING_MBS;
 		daoLexTable[ TOK_STRING_WCS ][ j ] = TOK_STRING_WCS;
@@ -641,7 +566,6 @@ void DaoInitLexTable()
 		if( isdigit( j ) ){
 			daoLexTable[ TOK_START ][ j ] = TOK_DIGITS_DEC;
 			daoLexTable[ TOK_DIGITS_DEC ][ j ] = TOK_DIGITS_DEC;
-			daoLexTable[ TOK_DIGITS_HEX ][ j ] = TOK_DIGITS_HEX;
 			daoLexTable[ TOK_OP_DOT ][ j ] = TOK_DOT_DIGITS;
 			daoLexTable[ TOK_DIGITS_0 ][ j ] = TOK_DIGITS_DEC;
 			daoLexTable[ TOK_DIGITS_0X ][ j ] = TOK_NUMBER_HEX;
@@ -667,7 +591,6 @@ void DaoInitLexTable()
 			daoLexTable[ TOK_VERBATIM ][j] = TOK_VERBATIM;
 
 			daoLexTable[ TOK_DIGITS_DEC ][ j ] = TOK_ERROR;
-			daoLexTable[ TOK_DIGITS_HEX ][ j ] = TOK_ERROR;
 			daoLexTable[ TOK_DIGITS_0 ][ j ] = TOK_ERROR;
 			daoLexTable[ TOK_DOT_DIGITS ][ j ] = TOK_ERROR;
 			daoLexTable[ TOK_DIGITS_DOT ][ j ] = TOK_ERROR;
@@ -686,6 +609,12 @@ void DaoInitLexTable()
 			daoLexTable[ TOK_DIGITS_0X ][ j ] = TOK_ERROR;
 		}
 	}
+	for(j=0; j<TOK_ERROR; j++) daoLexTable[j][ (unsigned) '#' ] = TOK_RESTART_HASH;
+
+	daoLexTable[ TOK_START ][ (unsigned) ' ' ]  = TOK_END_SPACE;
+	daoLexTable[ TOK_START ][ (unsigned) '\t' ] = TOK_END_TAB;
+	daoLexTable[ TOK_START ][ (unsigned) '\n' ] = TOK_END_NEWLN;
+	daoLexTable[ TOK_START ][ (unsigned) '\r' ] = TOK_END_NEWLN;
 	daoLexTable[ TOK_START ][ (unsigned) '(' ] = TOK_END_LB;
 	daoLexTable[ TOK_START ][ (unsigned) ')' ] = TOK_END_RB;
 	daoLexTable[ TOK_START ][ (unsigned) '{' ] = TOK_END_LCB;
@@ -694,10 +623,6 @@ void DaoInitLexTable()
 	daoLexTable[ TOK_START ][ (unsigned) ']' ] = TOK_END_RSB;
 	daoLexTable[ TOK_START ][ (unsigned) ',' ] = TOK_END_COMMA;
 	daoLexTable[ TOK_START ][ (unsigned) ';' ] = TOK_END_SEMCO;
-	daoLexTable[ TOK_OP_SHARP ][ (unsigned) '\n' ] = TOK_END_CMT;
-	daoLexTable[ TOK_OP_SHARP ][ (unsigned) '\r' ] = TOK_END_CMT;
-	daoLexTable[ TOK_COMT_LINE ][ (unsigned) '\n' ] = TOK_END_CMT;
-	daoLexTable[ TOK_COMT_LINE ][ (unsigned) '\r' ] = TOK_END_CMT;
 	daoLexTable[ TOK_START ][ (unsigned) '\'' ] = TOK_STRING_MBS;
 	daoLexTable[ TOK_STRING_MBS ][ (unsigned) '\'' ] = TOK_END_MBS;
 	daoLexTable[ TOK_START ][ (unsigned) '\"' ] = TOK_STRING_WCS;
@@ -707,29 +632,16 @@ void DaoInitLexTable()
 	daoLexTable[ TOK_OP_DOT2 ][ (unsigned) '.' ] = TOK_END_DOTS; /* ... */
 	daoLexTable[ TOK_DIGITS_0 ][ (unsigned) '.' ] = TOK_DIGITS_DOT;
 	daoLexTable[ TOK_DIGITS_DEC ][ (unsigned) '.' ] = TOK_DIGITS_DOT;
-	daoLexTable[ TOK_DIGITS_0 ][ (unsigned) 'L' ] = TOK_DIGITS_DEC;
-	daoLexTable[ TOK_DIGITS_DEC ][ (unsigned) 'L' ] = TOK_DIGITS_DEC;
-	daoLexTable[ TOK_DIGITS_HEX ][ (unsigned) 'L' ] = TOK_DIGITS_HEX;
-	daoLexTable[ TOK_NUMBER_HEX ][ (unsigned) 'L' ] = TOK_NUMBER_HEX;
-	daoLexTable[ TOK_DIGITS_0 ][ (unsigned) 'D' ] = TOK_DOUBLE_DEC;
-	daoLexTable[ TOK_DIGITS_DEC ][ (unsigned) 'D' ] = TOK_DOUBLE_DEC;
-	daoLexTable[ TOK_DOT_DIGITS ][ (unsigned) 'D' ] = TOK_DOUBLE_DEC;
-	daoLexTable[ TOK_DIGITS_DOT ][ (unsigned) 'D' ] = TOK_DOUBLE_DEC;
-	daoLexTable[ TOK_NUMBER_DEC ][ (unsigned) 'D' ] = TOK_DOUBLE_DEC;
-	daoLexTable[ TOK_DIGITS_0 ][ (unsigned) '$' ] = TOK_NUMBER_IMG;
-	daoLexTable[ TOK_DIGITS_DEC ][ (unsigned) '$' ] = TOK_NUMBER_IMG;
-	daoLexTable[ TOK_NUMBER_DEC ][ (unsigned) '$' ] = TOK_NUMBER_IMG;
-	daoLexTable[ TOK_NUMBER_SCI ][ (unsigned) '$' ] = TOK_NUMBER_IMG;
-	daoLexTable[ TOK_IDENTIFIER ][ (unsigned) '.' ] = TOK_RESTART;
-	daoLexTable[ TOK_ID_INITYPE ][ (unsigned) '.' ] = TOK_RESTART;
-	daoLexTable[ TOK_ID_SYMBOL ][ (unsigned) '.' ] = TOK_RESTART;
-	daoLexTable[ TOK_OP_SHARP ][ (unsigned) '{' ] = TOK_COMT_OPEN;
-	daoLexTable[ TOK_OP_SHARP ][ (unsigned) '}' ] = TOK_COMT_CLOSE;
+	daoLexTable[ TOK_DIGITS_0   ][ (unsigned) 'C' ] = TOK_NUMBER_IMG;
+	daoLexTable[ TOK_DIGITS_DEC ][ (unsigned) 'C' ] = TOK_NUMBER_IMG;
+	daoLexTable[ TOK_NUMBER_DEC ][ (unsigned) 'C' ] = TOK_NUMBER_IMG;
+	daoLexTable[ TOK_NUMBER_SCI ][ (unsigned) 'C' ] = TOK_NUMBER_IMG;
+	daoLexTable[ TOK_IDENTIFIER ][ (unsigned) '.' ] = TOK_RESTART_DOT;
+	daoLexTable[ TOK_ID_INITYPE ][ (unsigned) '.' ] = TOK_RESTART_DOT;
+	daoLexTable[ TOK_ID_SYMBOL ][ (unsigned) '.' ]  = TOK_RESTART_DOT;
 	daoLexTable[ TOK_START ][ (unsigned) '\\' ] = TOK_OP_ESC;
 	daoLexTable[ TOK_START ][ (unsigned) '@' ] = TOK_OP_AT;
-	daoLexTable[ TOK_OP_AT ][ (unsigned) '@' ] = TOK_OP_AT2;
 	daoLexTable[ TOK_OP_AT ][ (unsigned) '[' ] = TOK_VERBATIM;
-	daoLexTable[ TOK_OP_AT2 ][ (unsigned) '[' ] = TOK_VERBATIM;
 	daoLexTable[ TOK_VERBATIM ][ (unsigned) ' ' ] = TOK_VERBATIM;
 	daoLexTable[ TOK_VERBATIM ][ (unsigned) '.' ] = TOK_VERBATIM;
 	daoLexTable[ TOK_VERBATIM ][ (unsigned) ':' ] = TOK_VERBATIM;
@@ -739,18 +651,14 @@ void DaoInitLexTable()
 	daoLexTable[ TOK_VERBATIM ][ (unsigned) ')' ] = TOK_VERBATIM;
 	daoLexTable[ TOK_VERBATIM ][ (unsigned) '+' ] = TOK_VERBATIM;
 	daoLexTable[ TOK_START ][ (unsigned) '~' ] = TOK_OP_TILDE;
-	daoLexTable[ TOK_OP_EQ ][ (unsigned) '~' ] = TOK_OP_RGXM; /* =~ */
-	daoLexTable[ TOK_OP_NOT ][ (unsigned) '~' ] = TOK_OP_RGXU; /* !~ */
-	daoLexTable[ TOK_OP_TILDE ][ (unsigned) '~' ] = TOK_OP_RGXA; /* ~~ */
 	daoLexTable[ TOK_START ][ (unsigned) '=' ] = TOK_OP_EQ;
 
-	/*  :=  +=  -=  /=  *=  %=  &=  |=  ^=  !=  ==  <=  >=  */
-	for(i=TOK_OP_COLON; i<TOK_OP_GT; i++)
-		daoLexTable[i][ (unsigned) '=' ] = i + (TOK_EQ_COLON - TOK_OP_COLON);
+	/*  +=  -=  /=  *=  %=  &=  |=  ^=  !=  ==  */
+	for(i=TOK_OP_ADD; i<=TOK_OP_EQ; i++)
+		daoLexTable[i][ (unsigned) '=' ] = i + (TOK_EQ_ADD - TOK_OP_ADD);
 	daoLexTable[ TOK_START ][ (unsigned) '>' ] = TOK_OP_GT;
 	daoLexTable[ TOK_OP_QUEST ][ (unsigned) '=' ] = TOK_END_TEQ; /* ?= */
 	daoLexTable[ TOK_OP_QUEST ][ (unsigned) '<' ] = TOK_END_TISA; /* ?< */
-	daoLexTable[ TOK_OP_TILDE ][ (unsigned) '>' ] = TOK_END_APPXTO; /* ~> */
 	daoLexTable[ TOK_OP_SUB ][ (unsigned) '>' ] = TOK_END_ARROW; /* -> */
 	daoLexTable[ TOK_OP_EQ ][ (unsigned) '>' ] = TOK_END_FIELD; /* => */
 	daoLexTable[ TOK_START ][ (unsigned) '<' ] = TOK_OP_LT;
@@ -764,25 +672,25 @@ void DaoInitLexTable()
 	/* daoLexTable[ TOK_OP_GT ][ '>' ] = TOK_END_RSHIFT; */ /* >> */
 	/* daoLexTable[ TOK_OP_LT ][ '<' ] = TOK_END_LSHIFT; */ /* << */
 
-	daoLexTable[ TOK_START ][ (unsigned) '+' ] = TOK_OP_ADD;
+	daoLexTable[ TOK_START  ][ (unsigned) '+' ] = TOK_OP_ADD;
 	daoLexTable[ TOK_OP_ADD ][ (unsigned) '+' ] = TOK_END_INCR; /* ++ */
-	daoLexTable[ TOK_START ][ (unsigned) '-' ] = TOK_OP_SUB;
+	daoLexTable[ TOK_START  ][ (unsigned) '-' ] = TOK_OP_SUB;
 	daoLexTable[ TOK_OP_SUB ][ (unsigned) '-' ] = TOK_END_DECR; /* -- */
-	daoLexTable[ TOK_START ][ (unsigned) '*' ] = TOK_OP_MUL;
+	daoLexTable[ TOK_START  ][ (unsigned) '*' ] = TOK_OP_MUL;
 	daoLexTable[ TOK_OP_MUL ][ (unsigned) '*' ] = TOK_END_POW; /* ** */
-	daoLexTable[ TOK_START ][ (unsigned) '/' ] = TOK_OP_DIV;
-	daoLexTable[ TOK_START ][ (unsigned) '&' ] = TOK_OP_AND;
+	daoLexTable[ TOK_START  ][ (unsigned) '/' ] = TOK_OP_DIV;
+	daoLexTable[ TOK_START  ][ (unsigned) '&' ] = TOK_OP_AND;
 	daoLexTable[ TOK_OP_AND ][ (unsigned) '&' ] = TOK_END_AND; /* && */
 	daoLexTable[ TOK_START ][ (unsigned) '|' ] = TOK_OP_OR;
 	daoLexTable[ TOK_OP_OR ][ (unsigned) '|' ] = TOK_END_OR; /* || */
 	daoLexTable[ TOK_START ][ (unsigned) ':' ] = TOK_OP_COLON;
 	daoLexTable[ TOK_OP_COLON ][ (unsigned) ':' ] = TOK_END_COLON2; /* :: */
+	daoLexTable[ TOK_OP_NOT ][ (unsigned) '!' ] = TOK_OP_BANG2;
 	daoLexTable[ TOK_START ][ (unsigned) '%' ] = TOK_OP_MOD;
 	daoLexTable[ TOK_START ][ (unsigned) '!' ] = TOK_OP_NOT;
 	daoLexTable[ TOK_START ][ (unsigned) '^' ] = TOK_OP_XOR;
 	daoLexTable[ TOK_START ][ (unsigned) '?' ] = TOK_OP_QUEST;
 	daoLexTable[ TOK_START ][ (unsigned) '$' ] = TOK_OP_IMG;
-	daoLexTable[ TOK_START ][ (unsigned) '#' ] = TOK_OP_SHARP;
 	daoLexTable[ TOK_START ][ (unsigned) '0' ] = TOK_DIGITS_0;
 	daoLexTable[ TOK_DIGITS_0 ][ (unsigned) 'x' ] = TOK_DIGITS_0X;
 	daoLexTable[ TOK_DIGITS_0 ][ (unsigned) 'X' ] = TOK_DIGITS_0X;
@@ -797,20 +705,6 @@ void DaoInitLexTable()
 	daoLexTable[ TOK_NUMBER_SCI_E ][ (unsigned) '+' ] = TOK_NUMBER_SCI_ES;
 	daoLexTable[ TOK_NUMBER_SCI_E ][ (unsigned) '-' ] = TOK_NUMBER_SCI_ES;
 
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) '(' ] = TOK_ESC_LB;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) ')' ] = TOK_ESC_RB;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) '{' ] = TOK_ESC_LCB;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) '}' ] = TOK_ESC_RCB;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) '[' ] = TOK_ESC_LSB;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) ']' ] = TOK_ESC_RSB;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) '|' ] = TOK_ESC_PIPE;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) '!' ] = TOK_ESC_EXCLA;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) '?' ] = TOK_ESC_QUES;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) '*' ] = TOK_ESC_STAR;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) '+' ] = TOK_ESC_PLUS;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) '\'' ] = TOK_ESC_SQUO;
-	daoLexTable[ TOK_OP_ESC ][ (unsigned) '\"' ] = TOK_ESC_DQUO;
-
 	memset( daoArithOper, 0, DAO_NOKEY2*sizeof(DOper) );
 
 	daoArithOper[ DTOK_INCR ]   = doper( DAO_OPER_INCR,     1, 0, 0 );
@@ -822,7 +716,6 @@ void DaoInitLexTable()
 	daoArithOper[ DTOK_TILDE ]  = doper( DAO_OPER_TILDE,    1, 0, 10 );
 	daoArithOper[ DTOK_AMAND ]  = doper( DAO_OPER_BIT_AND,  0, 0, 1 );
 	daoArithOper[ DTOK_ASSN ]   = doper( DAO_OPER_ASSN,     0, 0, 12 );
-	daoArithOper[ DTOK_CASSN ]  = doper( DAO_OPER_ASSN,     0, 0, 12 );
 	daoArithOper[ DTOK_ADDASN ] = doper( DAO_OPER_ASSN_ADD, 0, 0, 11 );
 	daoArithOper[ DTOK_SUBASN ] = doper( DAO_OPER_ASSN_SUB, 0, 0, 11 );
 	daoArithOper[ DTOK_MULASN ] = doper( DAO_OPER_ASSN_MUL, 0, 0, 11 );
@@ -864,7 +757,7 @@ extern void DString_DeleteData( DString *self );
 DaoToken* DaoToken_New()
 {
 	DaoToken *self = (DaoToken*) dao_calloc( 1, sizeof(DaoToken) );
-	DString_Init( & self->string, 1 );
+	DString_Init( & self->string );
 	return self;
 }
 void DaoToken_Delete( DaoToken *self )
@@ -893,13 +786,49 @@ void DaoToken_Set( DaoToken *self, int type, int name, int index, const char *s 
 	self->type = type;
 	self->name = name;
 	self->index = index;
-	if( s ) DString_SetMBS( & self->string, s );
+	if( s ) DString_SetChars( & self->string, s );
+}
+dao_integer DaoToken_ToInteger( DaoToken *self )
+{
+	char *chars = self->string.chars;
+	dao_integer value = 0;
+	switch( self->name ){
+	case DTOK_NUMBER_DEC : case DTOK_NUMBER_SCI :
+	case DTOK_NUMBER_IMG :
+		value = strtod( chars, NULL );
+		break;
+	case DTOK_DIGITS_DEC :
+		value = sizeof(dao_integer) == 4 ? strtol(chars, 0, 10) : strtoll(chars, 0, 10);
+		break;
+	case DTOK_NUMBER_HEX :
+		value = sizeof(dao_integer) == 4 ? strtol(chars, 0, 16) : strtoll(chars, 0, 16);
+		break;
+	}
+	return value;
+}
+dao_float DaoToken_ToFloat( DaoToken *self )
+{
+	char *chars = self->string.chars;
+	dao_float value = 0;
+	switch( self->name ){
+	case DTOK_NUMBER_DEC : case DTOK_NUMBER_SCI :
+	case DTOK_NUMBER_IMG :
+		value = strtod( chars, NULL );
+		break;
+	case DTOK_DIGITS_DEC :
+		value = sizeof(dao_integer) == 4 ? strtol(chars, 0, 10) : strtoll(chars, 0, 10);
+		break;
+	case DTOK_NUMBER_HEX :
+		value = sizeof(dao_integer) == 4 ? strtol(chars, 0, 16) : strtoll(chars, 0, 16);
+		break;
+	}
+	return value;
 }
 
 const char* DaoToken_NameToString( unsigned char name )
 {
 	if( name <= DTOK_NONE2 ) return dao_oper_tokens[name];
-	if( name < DAO_NOKEY2 ) return dao_keywords[ name - DKEY_USE ].key;
+	if( name < DAO_NOKEY2 ) return dao_keywords[ name - DKEY_LOAD ].key;
 	return "";
 }
 int DaoToken_IsNumber( const char *src, int size )
@@ -914,7 +843,7 @@ int DaoToken_IsNumber( const char *src, int size )
 		size -= 1;
 	}
 	t = DaoToken_Check( src, size, & n );
-	return t >= DTOK_DIGITS_HEX && t <= DTOK_NUMBER_SCI && n == size;
+	return t >= DTOK_DIGITS_DEC && t <= DTOK_NUMBER_SCI && n == size;
 }
 int DaoToken_IsValidName( const char *src, int size )
 {
@@ -941,7 +870,7 @@ int DaoToken_Check( const char *src, int size, int *length )
 				type = DTOK_WCS;
 				break;
 			}
-		}else if( state == TOK_OP_SHARP ){
+		}else if( state == TOK_RESTART_HASH ){
 			if( ch == '{' ){
 				state = TOK_COMT_OPEN;
 			}else if( ch == '}' ){
@@ -977,15 +906,11 @@ int DaoToken_Check( const char *src, int size, int *length )
 			}
 			if( state >= TOK_END ){
 				type = daoTokenMap[ state ];
-				if( type == DTOK_NONE && isspace( src[0] ) )
-					type = daoSpaceType[ (int)src[0] ];
 				break;
-			}else if( state == TOK_RESTART ){
+			}else if( state <= TOK_RESTART ){
 				if( it ){
 					it --;
 					type = daoTokenMap[old];
-				}else if( type == DTOK_NONE && isspace( ch ) ){
-					type = daoSpaceType[ (int)ch ];
 				}
 				break;
 			}
@@ -994,11 +919,11 @@ int DaoToken_Check( const char *src, int size, int *length )
 	}
 	if( type ==0 ){
 		switch( state ){
-		case TOK_VERBATIM : type = DTOK_VBT_OPEN; break;
-		case TOK_STRING_MBS : type = DTOK_MBS_OPEN; break;
-		case TOK_STRING_WCS : type = DTOK_WCS_OPEN; break;
-		case TOK_OP_SHARP : type = DTOK_COMMENT; break;
-		case TOK_COMT_OPEN : type = DTOK_CMT_OPEN; break;
+		case TOK_VERBATIM     : type = DTOK_VBT_OPEN; break;
+		case TOK_STRING_MBS   : type = DTOK_MBS_OPEN; break;
+		case TOK_STRING_WCS   : type = DTOK_WCS_OPEN; break;
+		case TOK_RESTART_HASH : type = DTOK_COMMENT; break;
+		case TOK_COMT_OPEN    : type = DTOK_CMT_OPEN; break;
 		default : type = daoTokenMap[ state ]; it--; break;
 		}
 	}
@@ -1012,16 +937,16 @@ int DaoToken_Check( const char *src, int size, int *length )
 DaoLexer* DaoLexer_New()
 {
 	DaoLexer *self = (DaoLexer*) dao_malloc( sizeof(DaoLexer) );
-	self->tokens = DArray_New(D_TOKEN);
-	self->tokbuf = DArray_New(0);
+	self->tokens = DList_New( DAO_DATA_TOKEN );
+	self->tokbuf = DList_New(0);
 	return self;
 }
 void DaoLexer_Delete( DaoLexer *self )
 {
 	daoint i;
 	for(i=0; i<self->tokbuf->size; ++i) DaoToken_Delete( self->tokbuf->items.pToken[i] );
-	DArray_Delete( self->tokens );
-	DArray_Delete( self->tokbuf );
+	DList_Delete( self->tokens );
+	DList_Delete( self->tokbuf );
 	dao_free( self );
 }
 
@@ -1032,7 +957,7 @@ void DaoLexer_Reset( DaoLexer *self )
 		/* No copying of tokens: */
 		DaoToken *token = self->tokens->items.pToken[i];
 		if( token->string.size > 64 ) DString_Clear( & token->string );
-		DArray_Append( self->tokbuf, token );
+		DList_Append( self->tokbuf, token );
 	}
 	self->tokens->size = 0;
 }
@@ -1040,13 +965,13 @@ void DaoLexer_AppendToken( DaoLexer *self, DaoToken *token )
 {
 	DaoToken *tok;
 	if( self->tokbuf->size == 0 ){
-		DArray_Append( self->tokens, token );
+		DList_Append( self->tokens, token );
 		return;
 	}
-	tok = (DaoToken*) DArray_Back( self->tokbuf );
+	tok = (DaoToken*) DList_Back( self->tokbuf );
 	self->tokbuf->size -= 1;
 	DaoToken_Assign( tok, token );
-	DArray_Append( self->tokens, NULL );  /* avoid copying; */
+	DList_Append( self->tokens, NULL );  /* avoid copying; */
 	self->tokens->items.pToken[self->tokens->size-1] = tok;
 }
 void DaoLexer_Append( DaoLexer *self, int name, int line, const char *data )
@@ -1057,94 +982,47 @@ void DaoLexer_Append( DaoLexer *self, int name, int line, const char *data )
 	token.line = line;
 	if( name > DAO_NOKEY1 ) token.type = DTOK_IDENTIFIER;
 	if( name == DTOK_ID_THTYPE || name == DTOK_ID_SYMBOL ) token.type = DTOK_IDENTIFIER;
-	token.string = DString_WrapMBS( data );
+	token.string = DString_WrapChars( data );
 
 	DaoLexer_AppendToken( self, & token );
 }
 int DaoLexer_Tokenize( DaoLexer *self, const char *src, int flags )
 {
-	DString *source = DString_New(1);
-	DVector *lexenvs = DVector_New( sizeof(int) );
+	DString src2 = DString_WrapChars( src );
+	DString *source = DString_New();
+	DArray *lexenvs = DArray_New( sizeof(int) );
 	DaoToken *token = DaoToken_New();
 	DString *literal = & token->string;
 	char ch, *ss, hex[11] = "0x00000000";
 	int replace = flags & DAO_LEX_ESCAPE;
 	int comment = flags & DAO_LEX_COMMENT;
 	int space = flags & DAO_LEX_SPACE;
-	int srcSize = (int)strlen( src );
-	int old=0, state = TOK_START;
-	int lexenv = LEX_ENV_NORMAL;
-	int unicoded = 0;
-	int line = 1;
-	int cpos = 0;
-	int ret = 1;
-	int it = 0;
+	int srcSize = strlen( src );
+	int old = 0, state = TOK_START;
+	int lexenv = DAO_LEX_CODE;
+	int cpos = 0, line = 1;
+	int ret = 1, it = 0;
 	int i, m = 4;
 
+	/*
+	// Check if the source is in UTF-8, if not, convert it to UTF-8
+	// while assuming it is using the system encoding:
+	*/
+	if( DString_CheckUTF8( source ) == 0 ){
+		DString_ExportUTF8( & src2, source );
+		src = source->chars;
+		srcSize = source->size;
+	}
+
 	DString_SetSharing( literal, 0 );
-	for(it=0; it<srcSize; it++){
-		if( (signed char) src[it] < 0 ){
-			unicoded = 1;
-			break;
-		}
-	}
-	if( unicoded && daoConfig.mbs == 0 ){
-		DString *wcs = DString_New(0);
-		/* http://www.cl.cam.ac.uk/~mgk25/ucs/quotes.html */
-		wchar_t quotes[] = {
-			0x27 , 0x27 , 0x27, /* single q.m. */
-			0x22 , 0x22 , 0x22, /* double q.m. */
-			0x27 + 0xfee0 , 0x27 + 0xfee0 , 0x27 , /* single q.m. unicode */
-			0x22 + 0xfee0 , 0x22 + 0xfee0 , 0x22 , /* double q.m. unicode */
-			0x60 , 0x27 , 0x27, /* grave accent */
-			0x2018 , 0x2019 , 0x27 , /* left/right single q.m. */
-			0x201C , 0x201D , 0x22   /* left/right double q.m. */
-		};
-		wchar_t sl = L'\\' + 0xfee0;
-		wchar_t stop;
-		int i, N = 21;
-		it = 0;
-		DString_SetMBS( wcs, src );
-		while( it < wcs->size ){ // TODO: handle verbatim string!
-			for( i=0; i<N; i+=3 ){
-				if( wcs->wcs[it] == quotes[i] ){
-					stop = quotes[i+1];
-					wcs->wcs[it] = quotes[i+2];
-					it ++;
-					while( it < wcs->size && wcs->wcs[it] != stop ){
-						if( wcs->wcs[it] == sl || wcs->wcs[it] == L'\\' ){
-							it ++;
-							continue;
-						}
-						it ++;
-					}
-					if( it < wcs->size ) wcs->wcs[it] = quotes[i+2];
-					break;
-				}
-			}
-			if( it >= wcs->size ) break;
-			if( wcs->wcs[it] == 0x3000 ){
-				wcs->wcs[it] = 32; /* blank space */
-			}else if( wcs->wcs[it] > 0xff00 && wcs->wcs[it] < 0xff5f ){
-				wcs->wcs[it] -= 0xfee0; /* DBC to SBC */
-			}
-			it ++;
-		}
-		if( wcs->size ){
-			DString_SetWCS( source, wcs->wcs );
-			src = source->mbs;
-			srcSize = source->size;
-		}
-		DString_Delete( wcs );
-	}
 	DaoLexer_Reset( self );
 
-	DVector_PushInt( lexenvs, LEX_ENV_NORMAL );
+	DArray_PushInt( lexenvs, DAO_LEX_CODE );
 	it = 0;
 	token->cpos = 0;
 	while( it < srcSize ){
 #if 0
-		printf( "tok: %i %i  %i  %c    %s\n", srcSize, it, ch, ch, literal->mbs );
+		printf( "tok: %3i %3i  %3i  %c    %s\n", srcSize, it, ch, src[it], literal->chars );
 #endif
 		token->type = state;
 		token->name = 0;
@@ -1198,7 +1076,7 @@ int DaoLexer_Tokenize( DaoLexer *self, const char *src, int flags )
 						hex[i] = src[++it];
 						hex[++i] = 0;
 					}
-					DString_AppendWChar( literal, (wchar_t) strtol( hex, NULL, 0 ) );
+					DString_AppendWChar( literal, (size_t) strtol( hex, NULL, 0 ) );
 					break;
 				case 't' : DString_AppendChar( literal, '\t' ); break;
 				case 'n' : DString_AppendChar( literal, '\n' ); break;
@@ -1226,85 +1104,105 @@ int DaoLexer_Tokenize( DaoLexer *self, const char *src, int flags )
 			int len = srcSize - it - 1;
 			DString_AppendChar( literal, ']' );
 			token->type = token->name = DTOK_VBT_OPEN;
-			if( (ss = strstr( src + it + 1, literal->mbs )) != NULL ){
+			if( (ss = strstr( src + it + 1, literal->chars )) != NULL ){
 				len = (ss - src) - it - 1 + literal->size;
 				token->type = token->name = DTOK_VERBATIM;
 			}
 			for(i=0; i<len; i++) if( src[it+1+i] == '\n' ) line += 1;
-			DString_AppendDataMBS( literal, src + it + 1, len );
+			DString_AppendBytes( literal, src + it + 1, len );
 			state = TOK_RESTART;
 			DaoLexer_AppendToken( self, token );
 			DString_Clear( literal );
 			it += len;
-		}else if( lexenv == LEX_ENV_NORMAL ){
+		}else if( lexenv == DAO_LEX_CODE ){
 			old = state;
 			if( ch >=0 ){
 				state = daoLexTable[ state ][ (int)ch ];
 			}else if( state <= TOK_START ){
 				state = TOK_RESTART;
 			}else if( state != TOK_IDENTIFIER && state != TOK_STRING_MBS
-					&& state != TOK_STRING_WCS
-					&& state != TOK_COMT_LINE && state != TOK_COMT_OPEN ){
+					&& state != TOK_STRING_WCS && state != TOK_COMT_OPEN ){
 				state = TOK_RESTART;
 			}
 			if( state >= TOK_END ){
 				DString_AppendChar( literal, ch );
 				token->type = token->name = daoTokenMap[ state ];
-				if( token->type == DTOK_ID_THTYPE || token->type == DTOK_ID_SYMBOL )
+				if( token->type == DTOK_ID_THTYPE || token->type == DTOK_ID_SYMBOL ){
 					token->type = DTOK_IDENTIFIER;
-				if( space || comment || token->type != DTOK_COMMENT ){
-					if( isspace( token->string.mbs[0] ) )
-						token->type = token->name = daoSpaceType[ (int)token->string.mbs[0] ];
+				}
+				if( token->type == DTOK_CMT_OPEN || token->type == DTOK_COMMENT ){
+					if( space ) DaoLexer_AppendToken( self, token );
+				}else if( token->type >= DTOK_SPACE && token->type <= DTOK_NEWLN ){
+					if( comment ) DaoLexer_AppendToken( self, token );
+				}else{
 					DaoLexer_AppendToken( self, token );
 				}
 				/* may be a token before the line break; */
 				DString_Clear( literal );
 				state = TOK_START;
-			}else if( state == TOK_RESTART ){
+			}else if( state <= TOK_RESTART ){
 				if( literal->size ){
 					if( old == TOK_IDENTIFIER ){
-						token->name = dao_key_hash( literal->mbs, literal->size );
+						token->name = dao_key_hash( literal->chars, literal->size );
 						token->type = DTOK_IDENTIFIER;
 						if( token->name == 0 ) token->name = DTOK_IDENTIFIER;
 						DaoLexer_AppendToken( self, token );
 					}else if( old > TOK_RESTART && old != TOK_END ){
 						token->type = token->name = daoTokenMap[ old ];
-						if( token->type == DTOK_ID_THTYPE || token->type == DTOK_ID_SYMBOL )
+						if( token->type == DTOK_ID_THTYPE || token->type == DTOK_ID_SYMBOL ){
 							token->type = DTOK_IDENTIFIER;
-						DaoLexer_AppendToken( self, token );
-					}else if( space ){
-						if( isspace( token->string.mbs[0] ) )
-							token->type = token->name = daoSpaceType[ (int)token->string.mbs[0] ];
-						DaoLexer_AppendToken( self, token );
+						}
+						if( token->type == DTOK_CMT_OPEN || token->type == DTOK_COMMENT ){
+							if( comment ) DaoLexer_AppendToken( self, token );
+						}else if( token->type >= DTOK_SPACE && token->type <= DTOK_NEWLN ){
+							if( space ) DaoLexer_AppendToken( self, token );
+						}else{
+							DaoLexer_AppendToken( self, token );
+						}
 					}
 					DString_Clear( literal );
-					token->cpos = cpos;
 				}
 				DString_AppendChar( literal, ch );
-				if( ch >=0 )
-					state = daoLexTable[ TOK_START ][ (int)ch ];
-				else
-					state = TOK_IDENTIFIER;
-
-			}else if( state == TOK_COMT_OPEN ){
-				DString_AppendChar( literal, ch );
-				lexenv = LEX_ENV_COMMENT;
-				DVector_PushInt( lexenvs, LEX_ENV_COMMENT );
+				if( state == TOK_RESTART ){
+					state = ch >=0 ? daoLexTable[ TOK_START ][ (int)ch ] : TOK_IDENTIFIER;
+				}else if( state == TOK_RESTART_DOT ){
+					state = TOK_START;
+					token->type = token->name = DTOK_DOT;
+					DaoLexer_AppendToken( self, token );
+					DString_Clear( literal );
+				}else if( state == TOK_RESTART_HASH ){
+					state = TOK_RESTART_HASH;
+					lexenv = DAO_LEX_COMMENT_LINE;
+					DArray_PushInt( lexenvs, DAO_LEX_COMMENT_LINE );
+				}
+				token->cpos = cpos;
 			}else{
 				DString_AppendChar( literal, ch );
 			}
-		}else if( lexenv == LEX_ENV_COMMENT ){
+		}else if( lexenv == DAO_LEX_COMMENT_LINE ){
+			DString_AppendChar( literal, ch );
+			if( state == TOK_RESTART_HASH && ch == '{' ){
+				lexenv = lexenvs->data.ints[lexenvs->size-1] = DAO_LEX_COMMENT_BLOCK;
+			}else if( ch == '\n' ){
+				DArray_Pop( lexenvs );
+				lexenv = lexenvs->data.ints[lexenvs->size-1];
+				token->type = token->name = DTOK_COMMENT;
+				if( comment ) DaoLexer_AppendToken( self, token );
+				DString_Clear( literal );
+			}
+			state = TOK_START;
+		}else if( lexenv == DAO_LEX_COMMENT_BLOCK ){
 			DString_AppendChar( literal, ch );
 			if( ch == '#' ){
-				state = TOK_OP_SHARP;
-			}else if( ch == '{' && state == TOK_OP_SHARP ){
+				state = TOK_RESTART_HASH;
+			}else if( ch == '{' && state == TOK_RESTART_HASH ){
 				state = TOK_COMT_OPEN;
-				DVector_PushInt( lexenvs, LEX_ENV_COMMENT );
-			}else if( ch == '}' && state == TOK_OP_SHARP ){
+				DArray_PushInt( lexenvs, DAO_LEX_COMMENT_BLOCK );
+			}else if( ch == '}' && state == TOK_RESTART_HASH ){
 				state = TOK_COMT_CLOSE;
-				DVector_Pop( lexenvs );
+				DArray_Pop( lexenvs );
 				lexenv = lexenvs->data.ints[lexenvs->size-1];
-				if( lexenv != LEX_ENV_COMMENT ){
+				if( lexenv != DAO_LEX_COMMENT_BLOCK ){
 					token->type = token->name = DTOK_COMMENT;
 					if( comment ) DaoLexer_AppendToken( self, token );
 					DString_Clear( literal );
@@ -1316,38 +1214,43 @@ int DaoLexer_Tokenize( DaoLexer *self, const char *src, int flags )
 		}
 		it ++;
 	}
-	if( literal->size ){
+	if( literal->size && lexenv >= DAO_LEX_COMMENT_LINE ){
+		i = lexenv == DAO_LEX_COMMENT_LINE ? DTOK_COMMENT : DTOK_CMT_OPEN;
+		token->type = token->name = i;
+		if( comment ) DaoLexer_AppendToken( self, token );
+	}else if( literal->size ){
 		token->type = token->name = daoTokenMap[ state ];
-		if( lexenv == LEX_ENV_COMMENT ) token->type = token->name = DTOK_CMT_OPEN;
 		switch( state ){
 		case TOK_STRING_MBS : token->type = token->name = DTOK_MBS_OPEN; break;
 		case TOK_STRING_WCS : token->type = token->name = DTOK_WCS_OPEN; break;
 		}
 		if( token->type == DTOK_IDENTIFIER ){
-			token->name = dao_key_hash( literal->mbs, literal->size );
+			token->name = dao_key_hash( literal->chars, literal->size );
 			if( token->name == 0 ) token->name = DTOK_IDENTIFIER;
 		}else if( token->type == DTOK_ID_THTYPE || token->type == DTOK_ID_SYMBOL ){
 			token->type = DTOK_IDENTIFIER;
 		}
-		if( token->type || space ){
-			if( isspace( token->string.mbs[0] ) )
-				token->type = token->name = daoSpaceType[ (int)token->string.mbs[0] ];
+		if( token->type == DTOK_CMT_OPEN || token->type == DTOK_COMMENT ){
+			if( space ) DaoLexer_AppendToken( self, token );
+		}else if( token->type >= DTOK_SPACE && token->type <= DTOK_NEWLN ){
+			if( comment ) DaoLexer_AppendToken( self, token );
+		}else{
 			DaoLexer_AppendToken( self, token );
 		}
 	}
 	DaoToken_Delete( token );
-	DVector_Delete( lexenvs );
+	DArray_Delete( lexenvs );
 	DString_Delete( source );
 #if 0
 	for(i=0; i<self->tokens->size; i++){
 		DaoToken *tk = self->tokens->items.pToken[i];
-		printf( "%4i: %4i %4i , %4i,  %s\n", i, tk->type, tk->name, tk->cpos, tk->string.mbs );
+		printf( "%4i: %4i %4i , %4i,  %s\n", i, tk->type, tk->name, tk->cpos, tk->string.chars );
 	}
 #endif
 	return ret ? line : 0;
 }
 
-void DaoLexer_AnnotateCode( DArray *self, DaoVmCodeX vmc, DString *annot, int max )
+void DaoLexer_AnnotateCode( DList *self, DaoVmCodeX vmc, DString *annot, int max )
 {
 	DaoToken *t1, *t2, **tokens;
 	daoint i, k, len, pos, m = max/(vmc.middle + vmc.last + 2);
@@ -1373,15 +1276,15 @@ void DaoLexer_AnnotateCode( DArray *self, DaoVmCodeX vmc, DString *annot, int ma
 			if( len > m+3 ) len = m;
 		}
 		if( annot->size + len >= max2 ) len = max2 - annot->size;
-		DString_AppendDataMBS( annot, t2->string.mbs, len );
+		DString_AppendBytes( annot, t2->string.chars, len );
 		if( len != t2->string.size ){
-			DString_AppendMBS( annot, "..." );
+			DString_AppendChars( annot, "..." );
 			if( t2->type == DTOK_MBS ) DString_AppendChar( annot, '\'' );
 			else if( t2->type == DTOK_WCS ) DString_AppendChar( annot, '\"' );
 			else break;
 		}
 		if( (i+1) < vmc.middle && annot->size >= max2 ){
-			DString_AppendMBS( annot, "..." );
+			DString_AppendChars( annot, "..." );
 			break;
 		}
 	}
@@ -1401,112 +1304,18 @@ void DaoLexer_AnnotateCode( DArray *self, DaoVmCodeX vmc, DString *annot, int ma
 			if( len > m+3 ) len = m;
 		}
 		if( annot->size + len >= max ) len = max - annot->size;
-		DString_AppendDataMBS( annot, t2->string.mbs, len );
+		DString_AppendBytes( annot, t2->string.chars, len );
 		if( len != t2->string.size ){
-			DString_AppendMBS( annot, "..." );
+			DString_AppendChars( annot, "..." );
 			if( t2->type == DTOK_MBS ) DString_AppendChar( annot, '\'' );
 			else if( t2->type == DTOK_WCS ) DString_AppendChar( annot, '\"' );
 			else break;
 		}
 		if( i < vmc.last && annot->size >= max ){
-			DString_AppendMBS( annot, "..." );
+			DString_AppendChars( annot, "..." );
 			break;
 		}
 	}
-	DString_ChangeMBS( annot, "{{\n}}", "\\n", 0 );
-}
-int DaoLexer_FindOpenToken( DaoLexer *self, uchar_t tok, int start, int end )
-{
-	int i, n1, n2, n3;
-	DaoToken **tokens = self->tokens->items.pToken;
-
-	if( start < 0 ) return -1;
-	if( end == -1 || end >= self->tokens->size ) end = self->tokens->size-1;
-
-	n1 = n2 = n3 = 0;
-	for( i=start; i<=end; i++){
-		uchar_t tki = tokens[i]->name;
-		if( ! ( n1 | n2 | n3 ) && tki == tok ){
-			return i;
-		}else if( n1 <0 || n2 <0 || n3 <0 ){
-			return -1;
-		}else{
-			switch( tki ){
-			case DTOK_LCB : n1 ++; break;
-			case DTOK_RCB : n1 --; break;
-			case DTOK_LB  : n2 ++; break;
-			case DTOK_RB  : n2 --; break;
-			case DTOK_LSB : n3 ++; break;
-			case DTOK_RSB : n3 --; break;
-			}
-		}
-	}
-	return -1;
-}
-int DaoLexer_FindLeftPair( DaoLexer *self,  uchar_t lw, uchar_t rw, int start, int stop )
-{
-	DaoToken **tokens = self->tokens->items.pToken;
-	int k = 0;
-	int i = start;
-	int found = 0;
-	uchar_t tk;
-
-	if( start >= self->tokens->size ) start = self->tokens->size - 1;
-	if( stop <0 ) stop = 0;
-
-	while( i >= stop ){
-		tk = tokens[i]->name;
-		if( tk == rw ){
-			k++;
-		}else if( tk == lw ){
-			k--;
-			found = 1;
-		}
-		if( k==0 && found ) return i;
-		i--;
-	}
-	return -1;
-}
-int DaoLexer_FindRightPair( DaoLexer *self, uchar_t lw, uchar_t rw, int start, int stop )
-{
-	DaoToken **tokens = self->tokens->items.pToken;
-	int k = 0;
-	int i = start;
-	int found = 0;
-	uchar_t tk;
-
-	if( start <0 ) return -1;
-	if( stop== -1 ) stop = self->tokens->size-1;
-
-	while(1){
-		if( i > stop ) break;
-		if( i >= (int) self->tokens->size ) break;
-
-		tk = tokens[i]->name;
-		if( tk == lw )
-			k++;
-		else if( tk == rw ){
-			k--;
-			found = 1;
-		}
-
-		if( k==0 && found ) return i;
-		i++;
-	}
-	return -1;
+	DString_Change( annot, "{{\n}}", "\\n", 0 );
 }
 
-DString* DaoLexer_AddRaiseStatement( DaoLexer *self, const char *type, const char *info, int line )
-{
-	DaoLexer_Append( self, DTOK_IDENTIFIER, line, "panic" );
-	DaoLexer_Append( self, DTOK_LB, line, "(" );
-	DaoLexer_Append( self, DTOK_IDENTIFIER, line, "Exception" );
-	DaoLexer_Append( self, DTOK_COLON2, line, "::" );
-	DaoLexer_Append( self, DTOK_IDENTIFIER, line, type );
-	DaoLexer_Append( self, DTOK_LB, line, "(" );
-	DaoLexer_Append( self, DTOK_MBS, line, info );
-	DaoLexer_Append( self, DTOK_RB, line, ")" );
-	DaoLexer_Append( self, DTOK_RB, line, ")" );
-	DaoLexer_Append( self, DTOK_SEMCO, line, ";" );
-	return & self->tokens->items.pToken[ self->tokens->size - 4 ]->string;
-}
